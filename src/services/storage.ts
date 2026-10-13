@@ -16,7 +16,9 @@ import {
 } from 'firebase/firestore';
 import {
   getAuth,
-  signInWithEmailAndPassword,
+  sendSignInLinkToEmail,
+  isSignInWithEmailLink,
+  signInWithEmailLink,
   getIdTokenResult,
   signOut,
   onAuthStateChanged,
@@ -26,6 +28,7 @@ import {
 
 const FIREBASE_CONFIG_KEY = 'doctorbrand_cms_firebase_config_v1';
 const ADMIN_SESSION_KEY = 'doctorbrand_cms_admin_session_v1';
+const ADMIN_EMAIL_LINK_KEY = 'medframe_admin_email_link_email';
 
 export type DatabaseMode = 'local' | 'firestore';
 
@@ -657,22 +660,41 @@ export function subscribeToAuthChanges(callback: (user: AdminUser | null) => voi
   });
 }
 
-export async function adminSignIn(email: string, pass: string): Promise<AdminUser> {
-  const cleanEmail = email.trim();
+export async function adminSignIn(email: string): Promise<void> {
+  const cleanEmail = email.trim().toLowerCase();
   if (!authInstance || !currentFirebaseConfig) {
     throw new Error('إعداد Firebase Authentication مطلوب لتسجيل دخول المسؤول.');
   }
+  if (!cleanEmail) throw new Error('أدخل البريد الإلكتروني أولاً.');
 
-  const credential = await signInWithEmailAndPassword(authInstance, cleanEmail, pass);
-  const token = await getIdTokenResult(credential.user);
+  await sendSignInLinkToEmail(authInstance, cleanEmail, {
+    url: window.location.href,
+    handleCodeInApp: true,
+  });
+  window.localStorage.setItem(ADMIN_EMAIL_LINK_KEY, cleanEmail);
+}
+
+export async function completeAdminEmailLink(): Promise<AdminUser | null> {
+  if (!authInstance || !currentFirebaseConfig || !isSignInWithEmailLink(authInstance, window.location.href)) {
+    return null;
+  }
+
+  const email = window.localStorage.getItem(ADMIN_EMAIL_LINK_KEY);
+  if (!email) {
+    throw new Error('افتح رابط الدخول على نفس الجهاز والمتصفح الذي طلبت منه الرابط.');
+  }
+
+  const credential = await signInWithEmailLink(authInstance, email, window.location.href);
+  window.localStorage.removeItem(ADMIN_EMAIL_LINK_KEY);
+  const token = await getIdTokenResult(credential.user, true);
   if (token.claims.admin !== true) {
     await signOut(authInstance);
     localStorage.removeItem(ADMIN_SESSION_KEY);
-    throw new Error('هذا الحساب غير مخول للوصول إلى لوحة الإدارة.');
+    throw new Error('تم التحقق من البريد، لكن هذا الحساب غير مخول للوصول إلى لوحة الإدارة.');
   }
 
   const user: AdminUser = {
-    email: credential.user.email || cleanEmail,
+    email: credential.user.email || email,
     uid: credential.user.uid,
     isFirebaseUser: true,
   };
