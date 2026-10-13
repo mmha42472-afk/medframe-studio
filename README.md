@@ -18,9 +18,9 @@ A secure workspace for the MedFrame Studio team to manage doctors' public websit
 The app uses React, TypeScript, Vite, Firebase, and Vercel. Copy `.env.example` to `.env.local` and supply the Firebase web app configuration in your local environment. Do not commit real values.
 
 ```sh
-bun install
-bun run lint
-bun run build
+npm ci
+npm run lint
+npm run build
 ```
 
 ## Firebase administrator bootstrap

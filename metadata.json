@@ -1,0 +1,6 @@
+{
+  "name": "MedFrame Studio",
+  "description": "Your Expertise. Your Identity. A secure studio for doctor brands, content, and public websites.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

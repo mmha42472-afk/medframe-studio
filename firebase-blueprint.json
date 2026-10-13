@@ -1,0 +1,102 @@
+{
+  "entities": {
+    "DoctorProfile": {
+      "title": "DoctorProfile",
+      "description": "Personal branding website profile and clinical practice information for a doctor in Egypt",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the doctor document"
+        },
+        "slug": {
+          "type": "string",
+          "description": "Unique URL slug for the public website",
+          "pattern": "^[a-z0-9\\-]+$"
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Doctor full legal/professional Arabic name",
+          "maxLength": 150
+        },
+        "specialty": {
+          "type": "string",
+          "description": "Medical specialty in Arabic",
+          "maxLength": 150
+        },
+        "title": {
+          "type": "string",
+          "description": "Professional academic and clinical title",
+          "maxLength": 200
+        },
+        "photoUrl": {
+          "type": "string",
+          "description": "Profile portrait URL or image"
+        },
+        "bio": {
+          "type": "string",
+          "description": "Comprehensive doctor biography",
+          "maxLength": 4000
+        },
+        "yearsOfExperience": {
+          "type": "number",
+          "description": "Years of medical practice"
+        },
+        "clinic": {
+          "type": "object",
+          "description": "Clinic location, contact numbers, and working hours"
+        },
+        "services": {
+          "type": "array",
+          "description": "Medical services and treatments provided"
+        },
+        "articles": {
+          "type": "array",
+          "description": "Patient education and health awareness articles"
+        },
+        "faqs": {
+          "type": "array",
+          "description": "Frequently asked medical questions"
+        },
+        "socialMedia": {
+          "type": "object",
+          "description": "Doctor social media profiles"
+        },
+        "branding": {
+          "type": "object",
+          "description": "Primary and accent branding colors"
+        },
+        "seo": {
+          "type": "object",
+          "description": "Meta title and description for search engines"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "pending", "published"],
+          "description": "Publishing status"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of creation"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of last update"
+        },
+        "isDemo": {
+          "type": "boolean",
+          "description": "Flag indicating if this is placeholder demo profile"
+        }
+      },
+      "required": ["id", "slug", "fullName", "specialty", "status"]
+    }
+  },
+  "firestore": {
+    "/doctors/{doctorId}": {
+      "schema": "DoctorProfile",
+      "description": "Central collection of doctor profiles managed by the CMS admin"
+    }
+  }
+}

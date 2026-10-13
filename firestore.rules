@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Authentication alone does not grant administrator access. Administrators
+    // must receive the custom claim from a trusted Firebase Admin SDK process.
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidDoctor(data) {
+      return data.id is string
+        && data.slug is string
+        && data.slug.size() <= 120
+        && data.slug.matches('^[a-z0-9]+(?:-[a-z0-9]+)*$')
+        && data.fullName is string
+        && data.fullName.size() <= 200
+        && data.specialty is string
+        && data.specialty.size() <= 200
+        && data.status in ['draft', 'pending', 'published'];
+    }
+
+    match /doctors/{doctorId} {
+      // Public pages may read published doctor profiles only. Admins may
+      // access drafts and pending profiles after server-verified authorization.
+      allow read: if isAdmin() || resource.data.status == 'published';
+      allow create: if isAdmin()
+        && isValidId(doctorId)
+        && isValidDoctor(request.resource.data)
+        && request.resource.data.id == doctorId;
+      allow update: if isAdmin()
+        && isValidId(doctorId)
+        && isValidDoctor(request.resource.data)
+        && request.resource.data.id == doctorId;
+      allow delete: if isAdmin() && isValidId(doctorId);
+    }
+
+    // Used by the Firebase connection diagnostic. Never expose this collection
+    // to unauthenticated or ordinary signed-in users.
+    match /system/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Deny every collection not explicitly covered above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
