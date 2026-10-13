@@ -5,6 +5,8 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    // GitHub Pages serves this project under /medframe-studio/; Vercel/local use the domain root.
+    base: process.env.GITHUB_PAGES === 'true' ? '/medframe-studio/' : '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

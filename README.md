@@ -4,6 +4,8 @@
 
 A secure workspace for the MedFrame Studio team to manage doctors' public websites, content workflows, and reporting.
 
+The app can deploy from GitHub Actions to GitHub Pages. See [GitHub Pages deployment](docs/github-pages.md) for the one-time setup and Firebase requirements.
+
 ## Product principles
 
 - Preserve the existing Firebase project and records.

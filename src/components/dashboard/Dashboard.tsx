@@ -1,1063 +1,56 @@
-import React, { useState } from 'react';
-import { DoctorProfile, FirebaseConnectionConfig } from '../../types/doctor';
-import { DatabaseStatus } from '../../services/storage';
-import { AnalyticsAndSeoSection, auditDoctorSEO } from './AnalyticsAndSeoSection';
-import {
-  Users,
-  Globe,
-  FileEdit,
-  Clock,
-  Plus,
-  Search,
-  ExternalLink,
-  Copy,
-  Trash2,
-  Edit3,
-  Eye,
-  Check,
-  Layout,
-  Stethoscope,
-  Shield,
-  Layers,
-  BarChart3,
-  Cloud,
-  Database,
-  Download,
-  Upload,
-  RefreshCw,
-  AlertTriangle,
-  Menu,
-  X,
-  ChevronRight,
-  ShieldCheck,
-  CheckCircle2,
-  Settings,
-  ArrowUpRight,
-  Filter,
-  Sparkles,
-  ChevronDown,
-  Info,
-  LogOut,
-} from 'lucide-react';
-
-interface DashboardProps {
-  doctors: DoctorProfile[];
-  dbStatus: DatabaseStatus;
-  onAddDoctor: () => void;
-  onEditDoctor: (
-    doctor: DoctorProfile,
-    tab?: 'basic' | 'clinic' | 'qualifications' | 'services' | 'content' | 'branding'
-  ) => void;
-  onOpenBuilder?: (doctor: DoctorProfile) => void;
-  onPreviewDoctor: (doctor: DoctorProfile) => void;
-  onDuplicateDoctor: (id: string) => Promise<void>;
-  onDeleteDoctor: (id: string) => Promise<void>;
-  onTogglePublish: (doctor: DoctorProfile) => Promise<void>;
-  onOpenPublicUrl: (slug: string) => void;
-  onConnectFirebase: (
-    config: FirebaseConnectionConfig
-  ) => Promise<{ success: boolean; message: string; step?: string; fixGuide?: string }>;
-  onDisconnectFirebase: () => void;
-  onExportJson: () => void;
-  onImportJson: (json: string) => Promise<number>;
-  currentAdmin?: { email: string; uid: string; isFirebaseUser: boolean } | null;
-  onLogout?: () => void;
-}
-
-type NavigationTab = 'overview' | 'doctors' | 'analytics' | 'database';
-
-export const Dashboard: React.FC<DashboardProps> = ({
-  doctors,
-  dbStatus,
-  onAddDoctor,
-  onEditDoctor,
-  onOpenBuilder,
-  onPreviewDoctor,
-  onDuplicateDoctor,
-  onDeleteDoctor,
-  onTogglePublish,
-  onOpenPublicUrl,
-  onConnectFirebase,
-  onDisconnectFirebase,
-  onExportJson,
-  onImportJson,
-  currentAdmin,
-  onLogout,
-}) => {
-  const [activeNav, setActiveNav] = useState<NavigationTab>('overview');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [showFirebaseModal, setShowFirebaseModal] = useState(false);
-  const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  // Firebase Config Form State
-  const [fbConfig, setFbConfig] = useState<FirebaseConnectionConfig>({
-    apiKey: dbStatus.config?.apiKey || '',
-    authDomain: dbStatus.config?.authDomain || '',
-    projectId: dbStatus.config?.projectId || '',
-    storageBucket: dbStatus.config?.storageBucket || '',
-    messagingSenderId: dbStatus.config?.messagingSenderId || '',
-    appId: dbStatus.config?.appId || '',
-  });
-  const [fbConnecting, setFbConnecting] = useState(false);
-  const [fbResultMsg, setFbResultMsg] = useState<{
-    success: boolean;
-    message: string;
-    step?: string;
-    fixGuide?: string;
-  } | null>(null);
-
-  // Metrics
-  const totalCount = doctors.length;
-  const publishedCount = doctors.filter((d) => d.status === 'published').length;
-  const draftCount = doctors.filter((d) => d.status === 'draft').length;
-  const pendingCount = doctors.filter((d) => d.status === 'pending').length;
-
-  // Filtered doctors
-  const filteredDoctors = doctors.filter((doc) => {
-    const matchesFilter = statusFilter === 'all' ? true : doc.status === statusFilter;
-    const query = searchQuery.trim().toLowerCase();
-    const matchesQuery =
-      !query ||
-      doc.fullName.toLowerCase().includes(query) ||
-      doc.specialty.toLowerCase().includes(query) ||
-      doc.slug.toLowerCase().includes(query) ||
-      doc.clinic?.name?.toLowerCase().includes(query) ||
-      doc.clinic?.city?.toLowerCase().includes(query);
-
-    return matchesFilter && matchesQuery;
-  });
-
-  const handleCopyLink = (slug: string) => {
-    const origin = window.location.origin;
-    const path = `${origin}/doctors/${slug}`;
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(path);
-      setCopiedSlug(slug);
-      setTimeout(() => setCopiedSlug(null), 2200);
-    }
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteConfirmId) return;
-    try {
-      setIsDeleting(true);
-      await onDeleteDoctor(deleteConfirmId);
-      setDeleteConfirmId(null);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const handleFirebaseConnectSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!fbConfig.apiKey || !fbConfig.projectId) {
-      alert('ÙŠØ±Ø¬Ù‰ Ø¥Ø¯Ø®Ø§Ù„ apiKey Ùˆ projectId Ø¹Ù„Ù‰ Ø§Ù„Ø£Ù‚Ù„.');
-      return;
-    }
-    try {
-      setFbConnecting(true);
-      setFbResultMsg(null);
-      const res = await onConnectFirebase(fbConfig);
-      setFbResultMsg(res);
-      if (res.success) {
-        setTimeout(() => setShowFirebaseModal(false), 2000);
-      }
-    } finally {
-      setFbConnecting(false);
-    }
-  };
-
-  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const content = event.target?.result as string;
-        if (content) {
-          try {
-            const count = await onImportJson(content);
-            alert(`ØªÙ… Ø§Ø³ØªÙŠØ±Ø§Ø¯ ${count} Ù…Ù„Ù Ø·Ø¨ÙŠØ¨ Ø¨Ù†Ø¬Ø§Ø­!`);
-          } catch (err) {
-            alert(err instanceof Error ? err.message : 'ÙØ´Ù„ Ø§Ù„Ø§Ø³ØªÙŠØ±Ø§Ø¯');
-          }
-        }
-      };
-      reader.readAsText(file);
-    }
-  };
-
-  const doctorToDelete = doctors.find((d) => d.id === deleteConfirmId);
-
-  return (
-    <div dir="rtl" className="min-h-screen bg-slate-50/80 text-slate-900 flex font-sans antialiased selection:bg-teal-500 selection:text-white">
-      {/* -------------------- RIGHT SIDEBAR (RTL Linear/Stripe style) -------------------- */}
-      <aside
-        className={`fixed inset-y-0 right-0 z-40 w-64 bg-white border-l border-slate-200/90 flex flex-col justify-between transition-transform duration-200 ease-in-out lg:translate-x-0 ${
-          mobileMenuOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full lg:translate-x-0'
-        }`}
-      >
-        <div className="flex flex-col h-full">
-          {/* Logo & Brand */}
-          <div className="h-16 px-5 flex items-center justify-between border-b border-slate-100">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-slate-900 text-sky-300 flex items-center justify-center font-black text-xs tracking-tight ring-1 ring-slate-800">
-                <span className="border-l-2 border-t-2 border-sky-400 px-1.5 py-1">MF</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="font-bold text-sm tracking-tight text-slate-900 leading-tight">
-                  MedFrame Studio
-                </span>
-                <span className="text-[10px] text-slate-500 font-medium leading-tight">
-                  Your Expertise. Your Identity.
-                </span>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setMobileMenuOpen(false)}
-              className="lg:hidden p-1.5 text-slate-400 hover:text-slate-700 rounded-md"
-              aria-label="Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„Ù‚Ø§Ø¦Ù…Ø©"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Primary Action Button */}
-          <div className="p-3">
-            <button
-              onClick={onAddDoctor}
-              className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 active:scale-[0.99] text-white text-xs font-semibold transition shadow-xs"
-            >
-              <Plus className="w-4 h-4 stroke-[2.2]" />
-              <span>Ø¥Ø¶Ø§ÙØ© Ø¯ÙƒØªÙˆØ± Ø¬Ø¯ÙŠØ¯</span>
-            </button>
-          </div>
-
-          {/* Navigation Items */}
-          <nav className="px-2 space-y-0.5 flex-1">
-            <button
-              onClick={() => {
-                setActiveNav('overview');
-                setMobileMenuOpen(false);
-              }}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition ${
-                activeNav === 'overview'
-                  ? 'bg-slate-100 text-slate-900 font-semibold'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Layers className={`w-4 h-4 ${activeNav === 'overview' ? 'text-teal-600' : 'text-slate-400'}`} />
-                <span>Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ… Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => {
-                setActiveNav('doctors');
-                setMobileMenuOpen(false);
-              }}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition ${
-                activeNav === 'doctors'
-                  ? 'bg-slate-100 text-slate-900 font-semibold'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Users className={`w-4 h-4 ${activeNav === 'doctors' ? 'text-teal-600' : 'text-slate-400'}`} />
-                <span>Ø¯Ù„ÙŠÙ„ Ù…ÙˆØ§Ù‚Ø¹ Ø§Ù„Ø£Ø·Ø¨Ø§Ø¡</span>
-              </div>
-              <span className="font-mono text-[11px] text-slate-500 tabular-nums">
-                {totalCount}
-              </span>
-            </button>
-
-            <button
-              onClick={() => {
-                setActiveNav('analytics');
-                setMobileMenuOpen(false);
-              }}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition ${
-                activeNav === 'analytics'
-                  ? 'bg-slate-100 text-slate-900 font-semibold'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <BarChart3 className={`w-4 h-4 ${activeNav === 'analytics' ? 'text-teal-600' : 'text-slate-400'}`} />
-                <span>Ø§Ù„Ø²ÙŠØ§Ø±Ø§Øª ÙˆÙ…Ø¤Ø´Ø±Ø§Øª SEO</span>
-              </div>
-              <span className="text-[10px] text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded font-medium">
-                Live
-              </span>
-            </button>
-
-            <button
-              onClick={() => {
-                setShowFirebaseModal(true);
-                setMobileMenuOpen(false);
-              }}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition"
-            >
-              <div className="flex items-center gap-2.5">
-                {dbStatus.isCloudConnected ? (
-                  <Cloud className="w-4 h-4 text-emerald-600" />
-                ) : (
-                  <Database className="w-4 h-4 text-slate-400" />
-                )}
-                <span>Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª</span>
-              </div>
-              <span className="text-[10px] text-slate-500 font-medium">
-                {dbStatus.isCloudConnected ? 'Firestore' : 'Ù…Ø­Ù„ÙŠ'}
-              </span>
-            </button>
-          </nav>
-
-          {/* Sidebar Bottom: Storage Mode & Admin Profile */}
-          <div className="p-3 border-t border-slate-100 space-y-2">
-            <button
-              onClick={() => setShowFirebaseModal(true)}
-              className="w-full p-2.5 rounded-lg bg-slate-50 hover:bg-slate-100/90 border border-slate-200/70 transition text-right flex items-center justify-between"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
-                  <span
-                    className={`w-2 h-2 rounded-full shrink-0 ${
-                      dbStatus.isCloudConnected ? 'bg-emerald-500' : 'bg-amber-500'
-                    }`}
-                  ></span>
-                  <span className="truncate">
-                    {dbStatus.isCloudConnected ? 'Firebase Ø³Ø­Ø§Ø¨ÙŠ' : 'ØªØ®Ø²ÙŠÙ† Ø§Ù„Ù…ØªØµÙØ­ Ø§Ù„Ù…Ø­Ù„ÙŠ'}
-                  </span>
-                </div>
-                <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                  {dbStatus.isCloudConnected ? 'Ø§Ù„Ù…Ø²Ø§Ù…Ù†Ø© Ø§Ù„Ø³Ø­Ø§Ø¨ÙŠØ© Ù†Ø´Ø·Ø©' : 'Ø§Ø¶ØºØ· Ù„Ù„Ø±Ø¨Ø· Ø¨Ø§Ù„Ø³Ø­Ø§Ø¨Ø©'}
-                </p>
-              </div>
-              <Settings className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            </button>
-
-            {/* Admin identity & Logout */}
-            <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200/60">
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <div className="w-7 h-7 rounded-full bg-slate-900 text-teal-400 flex items-center justify-center font-bold text-xs ring-1 ring-slate-200 shrink-0">
-                  {currentAdmin?.email?.charAt(0).toUpperCase() || 'A'}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-xs text-slate-900 truncate" title={currentAdmin?.email || 'Ù…Ø³Ø¤ÙˆÙ„ Ø§Ù„Ù†Ø¸Ø§Ù…'}>
-                    {currentAdmin?.email || 'Ù…Ø³Ø¤ÙˆÙ„ Ø§Ù„Ù†Ø¸Ø§Ù…'}
-                  </p>
-                  <p className="text-[10px] text-slate-500 truncate">
-                    {currentAdmin?.isFirebaseUser ? 'Firebase Auth' : 'Ø¬Ù„Ø³Ø© Ù…Ø­Ù„ÙŠØ©'}
-                  </p>
-                </div>
-              </div>
-              {onLogout && (
-                <button
-                  onClick={onLogout}
-                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition shrink-0"
-                  title="ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø®Ø±ÙˆØ¬ Ù…Ù† Ù„ÙˆØ­Ø© Ø§Ù„Ø¥Ø¯Ø§Ø±Ø©"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      {/* Backdrop for mobile */}
-      {mobileMenuOpen && (
-        <div
-          onClick={() => setMobileMenuOpen(false)}
-          className="fixed inset-0 z-30 bg-slate-900/40 backdrop-blur-xs lg:hidden"
-        ></div>
-      )}
-
-      {/* -------------------- MAIN WORKSPACE -------------------- */}
-      <div className="flex-1 flex flex-col min-w-0 lg:mr-64">
-        {/* Top Header Bar */}
-        <header className="h-16 bg-white border-b border-slate-200/80 px-6 sm:px-8 flex items-center justify-between sticky top-0 z-20">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-100"
-              aria-label="ÙØªØ­ Ø§Ù„Ù‚Ø§Ø¦Ù…Ø©"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-
-            <div>
-              <div className="flex items-center gap-2 text-xs text-slate-400">
-                <span>MedFrame Studio</span>
-                <span>/</span>
-                <span className="text-slate-700 font-medium">
-                  {activeNav === 'overview'
-                    ? 'Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ… Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©'
-                    : activeNav === 'doctors'
-                    ? 'Ø¯Ù„ÙŠÙ„ Ø§Ù„Ø£Ø·Ø¨Ø§Ø¡'
-                    : 'Ø§Ù„Ø²ÙŠØ§Ø±Ø§Øª ÙˆÙ…Ø¤Ø´Ø±Ø§Øª SEO'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Header Action Tools */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onAddDoctor}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold transition active:scale-95"
-            >
-              <Plus className="w-3.5 h-3.5 stroke-[2.2]" />
-              <span>Ø¥Ø¶Ø§ÙØ© Ø¯ÙƒØªÙˆØ±</span>
-            </button>
-
-            <button
-              onClick={onExportJson}
-              className="p-1.5 text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 text-xs font-medium transition"
-              title="ØªØµØ¯ÙŠØ± Ù†Ø³Ø®Ø© Ø§Ø­ØªÙŠØ§Ø·ÙŠØ© Ù…Ù† Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª (JSON)"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-
-            <label
-              className="p-1.5 text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 text-xs font-medium transition cursor-pointer"
-              title="Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø£Ø·Ø¨Ø§Ø¡ (JSON)"
-            >
-              <Upload className="w-4 h-4" />
-              <input type="file" accept=".json" onChange={handleImportFile} className="hidden" />
-            </label>
-          </div>
-        </header>
-
-        {/* Workspace Body */}
-        <main className="p-6 sm:p-8 space-y-6 flex-1 max-w-7xl mx-auto w-full">
-          {/* 4 Refined KPI Cards (Linear / Stripe style, anti-slop tabular numbers) */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Total Doctors */}
-            <div className="bg-white rounded-xl p-4 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
-              <div className="flex items-center justify-between text-slate-500 mb-2">
-                <span className="text-xs font-medium text-slate-500">Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø£Ø·Ø¨Ø§Ø¡</span>
-                <Users className="w-4 h-4 text-slate-400" />
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl sm:text-3xl font-bold text-slate-900 font-mono tabular-nums tracking-tight">
-                  {totalCount}
-                </span>
-                <span className="text-[11px] text-slate-400">Ù…Ù„Ù Ù…Ø³Ø¬Ù„</span>
-              </div>
-            </div>
-
-            {/* Published Websites */}
-            <div className="bg-white rounded-xl p-4 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
-              <div className="flex items-center justify-between text-slate-500 mb-2">
-                <span className="text-xs font-medium text-emerald-700">Ù…ÙˆØ§Ù‚Ø¹ Ù…Ù†Ø´ÙˆØ±Ø© Ø£ÙˆÙ†Ù„Ø§ÙŠÙ†</span>
-                <Globe className="w-4 h-4 text-emerald-600" />
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl sm:text-3xl font-bold text-emerald-700 font-mono tabular-nums tracking-tight">
-                  {publishedCount}
-                </span>
-                <span className="text-[11px] text-slate-500 font-mono tabular-nums">
-                  {totalCount > 0 ? Math.round((publishedCount / totalCount) * 100) : 0}% Ù…Ù† Ø§Ù„Ø´Ø¨ÙƒØ©
-                </span>
-              </div>
-            </div>
-
-            {/* Pending Review */}
-            <div className="bg-white rounded-xl p-4 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
-              <div className="flex items-center justify-between text-slate-500 mb-2">
-                <span className="text-xs font-medium text-amber-700">Ø¨Ø§Ù†ØªØ¸Ø§Ø± Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø©</span>
-                <Clock className="w-4 h-4 text-amber-600" />
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl sm:text-3xl font-bold text-amber-700 font-mono tabular-nums tracking-tight">
-                  {pendingCount}
-                </span>
-                <span className="text-[11px] text-slate-400">ØªÙ†ØªØ¸Ø± Ø§Ù„Ø§Ø¹ØªÙ…Ø§Ø¯</span>
-              </div>
-            </div>
-
-            {/* Drafts */}
-            <div className="bg-white rounded-xl p-4 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
-              <div className="flex items-center justify-between text-slate-500 mb-2">
-                <span className="text-xs font-medium text-slate-600">Ù…Ø³ÙˆØ¯Ø§Øª Ù‚ÙŠØ¯ Ø§Ù„ØªØ¬Ù‡ÙŠØ²</span>
-                <FileEdit className="w-4 h-4 text-slate-400" />
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl sm:text-3xl font-bold text-slate-700 font-mono tabular-nums tracking-tight">
-                  {draftCount}
-                </span>
-                <span className="text-[11px] text-slate-400">ØºÙŠØ± Ù…Ù†Ø´ÙˆØ±Ø©</span>
-              </div>
-            </div>
-          </div>
-
-          {/* View Tab Switcher */}
-          <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
-              <button
-                onClick={() => setActiveNav('overview')}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
-                  activeNav === 'overview'
-                    ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Ø¯Ù„ÙŠÙ„ Ø§Ù„Ø£Ø·Ø¨Ø§Ø¡ ÙˆØ§Ù„Ù…ÙˆØ§Ù‚Ø¹
-              </button>
-              <button
-                onClick={() => setActiveNav('analytics')}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 ${
-                  activeNav === 'analytics'
-                    ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <span>Ø§Ù„Ø²ÙŠØ§Ø±Ø§Øª ÙˆÙ…Ø¤Ø´Ø±Ø§Øª SEO</span>
-                <span className="text-[10px] font-mono tabular-nums text-teal-700 bg-teal-50 px-1 py-0.2 rounded">
-                  {doctors.length}
-                </span>
-              </button>
-            </div>
-
-            <div className="text-xs text-slate-500 hidden sm:block">
-              {filteredDoctors.length} Ù…Ù† Ø£ØµÙ„ {totalCount} Ø·Ø¨ÙŠØ¨
-            </div>
-          </div>
-
-          {/* ----------------- SECTION 1: DOCTORS DIRECTORY TABLE ----------------- */}
-          {(activeNav === 'overview' || activeNav === 'doctors') && (
-            <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
-              {/* Table Toolbar */}
-              <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                {/* Search Input */}
-                <div className="relative flex-1 max-w-sm">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Ø§Ø¨Ø­Ø« Ø¨Ø§Ù„Ø§Ø³Ù…ØŒ Ø§Ù„ØªØ®ØµØµØŒ Ø§Ù„Ø¹ÙŠØ§Ø¯Ø©ØŒ Ø£Ùˆ Ø§Ù„Ø±Ø§Ø¨Ø·..."
-                    className="w-full text-xs pr-8 pl-3 py-2 rounded-lg border border-slate-200 bg-slate-50/60 focus:bg-white focus:outline-none focus:border-teal-500 transition font-medium"
-                  />
-                </div>
-
-                {/* Filter Segmented Control */}
-                <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-xs">
-                  <button
-                    onClick={() => setStatusFilter('all')}
-                    className={`px-2.5 py-1 rounded-md transition font-medium ${
-                      statusFilter === 'all'
-                        ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Ø§Ù„ÙƒÙ„ ({totalCount})
-                  </button>
-                  <button
-                    onClick={() => setStatusFilter('published')}
-                    className={`px-2.5 py-1 rounded-md transition font-medium ${
-                      statusFilter === 'published'
-                        ? 'bg-white text-emerald-800 shadow-2xs font-semibold'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Ø§Ù„Ù…Ù†Ø´ÙˆØ± ({publishedCount})
-                  </button>
-                  <button
-                    onClick={() => setStatusFilter('pending')}
-                    className={`px-2.5 py-1 rounded-md transition font-medium ${
-                      statusFilter === 'pending'
-                        ? 'bg-white text-amber-800 shadow-2xs font-semibold'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Ù‚ÙŠØ¯ Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø© ({pendingCount})
-                  </button>
-                  <button
-                    onClick={() => setStatusFilter('draft')}
-                    className={`px-2.5 py-1 rounded-md transition font-medium ${
-                      statusFilter === 'draft'
-                        ? 'bg-white text-slate-800 shadow-2xs font-semibold'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Ø§Ù„Ù…Ø³ÙˆØ¯Ø§Øª ({draftCount})
-                  </button>
-                </div>
-              </div>
-
-              {/* Data Table (SaaS High-Density Grid) */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-right text-xs">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold text-[11px]">
-                    <tr>
-                      <th className="py-2.5 px-4">Ø§Ù„Ø·Ø¨ÙŠØ¨</th>
-                      <th className="py-2.5 px-4">Ø§Ù„ØªØ®ØµØµ ÙˆØ§Ù„Ø¹ÙŠØ§Ø¯Ø©</th>
-                      <th className="py-2.5 px-4">Ø­Ø§Ù„Ø© Ø§Ù„Ù…ÙˆÙ‚Ø¹</th>
-                      <th className="py-2.5 px-4">Ø§Ù„Ø±Ø§Ø¨Ø· Ø§Ù„Ù…Ø®ØµØµ</th>
-                      <th className="py-2.5 px-4 text-center">ØªÙ‚ÙŠÙŠÙ… SEO</th>
-                      <th className="py-2.5 px-4">Ø¢Ø®Ø± ØªØ­Ø¯ÙŠØ«</th>
-                      <th className="py-2.5 px-4 text-left">Ø¥Ø¬Ø±Ø§Ø¡Ø§Øª</th>
-                    </tr>
-                  </thead>
-
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredDoctors.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="py-12 text-center text-slate-400">
-                          <div className="max-w-xs mx-auto space-y-2">
-                            <Users className="w-8 h-8 mx-auto text-slate-300 stroke-1" />
-                            <p className="text-xs text-slate-600 font-medium">Ù„Ù… ÙŠØªÙ… Ø§Ù„Ø¹Ø«ÙˆØ± Ø¹Ù„Ù‰ Ø£Ø·Ø¨Ø§Ø¡ Ù…Ø·Ø§Ø¨Ù‚ÙŠÙ†</p>
-                            <p className="text-[11px] text-slate-400">
-                              Ø¬Ø±Ù‘Ø¨ ØªØºÙŠÙŠØ± ÙƒÙ„Ù…Ø§Øª Ø§Ù„Ø¨Ø­Ø« Ø£Ùˆ Ø¥Ø¶Ø§ÙØ© Ø·Ø¨ÙŠØ¨ Ø¬Ø¯ÙŠØ¯ Ø¥Ù„Ù‰ Ø§Ù„Ù†Ø¸Ø§Ù…
-                            </p>
-                            <button
-                              onClick={onAddDoctor}
-                              className="mt-2 text-xs font-semibold text-teal-600 hover:text-teal-700"
-                            >
-                              + Ø¥Ø¶Ø§ÙØ© Ø¯ÙƒØªÙˆØ± Ø¬Ø¯ÙŠØ¯ Ø§Ù„Ø¢Ù†
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredDoctors.map((doc) => {
-                        const seoAudit = auditDoctorSEO(doc);
-                        return (
-                          <tr key={doc.id} className="hover:bg-slate-50/70 transition-colors group">
-                            {/* Doctor Name & Avatar */}
-                            <td className="py-3 px-4">
-                              <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center text-slate-600 font-bold text-xs relative">
-                                  {doc.photoUrl ? (
-                                    <img
-                                      src={doc.photoUrl}
-                                      alt={doc.fullName}
-                                      referrerPolicy="no-referrer"
-                                      className="w-full h-full object-cover"
-                                      onError={(e) => {
-                                        // Fallback to initials if image fails
-                                        e.currentTarget.style.display = 'none';
-                                      }}
-                                    />
-                                  ) : null}
-                                  <span className="absolute inset-0 flex items-center justify-center bg-slate-100 text-slate-700 font-bold">
-                                    {doc.fullName?.charAt(0) || 'Ø·'}
-                                  </span>
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-semibold text-slate-900 truncate">
-                                      {doc.fullName || 'Ø·Ø¨ÙŠØ¨ Ø¨Ø¯ÙˆÙ† Ø§Ø³Ù…'}
-                                    </span>
-                                    {doc.isDemo && (
-                                      <span className="text-[10px] text-slate-400 font-normal">
-                                        (ØªØ¬Ø±ÙŠØ¨ÙŠ)
-                                      </span>
-                                    )}
-                                  </div>
-                                  <span className="text-[11px] text-slate-400 block truncate">
-                                    {doc.title || 'Ø§Ø³ØªØ´Ø§Ø±ÙŠ'}
-                                  </span>
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* Specialty & Clinic */}
-                            <td className="py-3 px-4">
-                              <span className="font-medium text-slate-800 block truncate max-w-[200px]">
-                                {doc.specialty}
-                              </span>
-                              <span className="text-[11px] text-slate-400 block truncate max-w-[200px]">
-                                {doc.clinic?.name || doc.clinic?.city || 'Ø§Ù„Ù‚Ø§Ù‡Ø±Ø©'}
-                              </span>
-                            </td>
-
-                            {/* Website Status (Zero-pill: dot + text) */}
-                            <td className="py-3 px-4">
-                              <div className="flex items-center gap-1.5">
-                                <span
-                                  className={`w-2 h-2 rounded-full shrink-0 ${
-                                    doc.status === 'published'
-                                      ? 'bg-emerald-500'
-                                      : doc.status === 'pending'
-                                      ? 'bg-amber-500'
-                                      : 'bg-slate-400'
-                                  }`}
-                                ></span>
-                                <span
-                                  className={`text-xs font-medium ${
-                                    doc.status === 'published'
-                                      ? 'text-emerald-700'
-                                      : doc.status === 'pending'
-                                      ? 'text-amber-700'
-                                      : 'text-slate-600'
-                                  }`}
-                                >
-                                  {doc.status === 'published'
-                                    ? 'Ù…Ù†Ø´ÙˆØ± Ø£ÙˆÙ†Ù„Ø§ÙŠÙ†'
-                                    : doc.status === 'pending'
-                                    ? 'Ù‚ÙŠØ¯ Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø©'
-                                    : 'Ù…Ø³ÙˆØ¯Ø©'}
-                                </span>
-                              </div>
-                            </td>
-
-                            {/* Custom URL Slug - Clickable link to doctor's website */}
-                            <td className="py-3 px-4">
-                              <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                                <a
-                                  href={`/doctors/${doc.slug}`}
-                                  onClick={(e) => {
-                                    if (!e.ctrlKey && !e.metaKey && !e.shiftKey && onOpenPublicUrl) {
-                                      e.preventDefault();
-                                      onOpenPublicUrl(doc.slug);
-                                    }
-                                  }}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-teal-700 hover:text-teal-900 font-medium hover:underline bg-teal-50/70 hover:bg-teal-100/70 px-2 py-0.5 rounded transition"
-                                  title="Ø§Ø¶ØºØ· Ù„ÙØªØ­ Ù…ÙˆÙ‚Ø¹ Ø§Ù„Ø·Ø¨ÙŠØ¨ (Ø£Ùˆ Ø¨Ø§Ù„Ø²Ø± Ø§Ù„Ø£ÙŠÙ…Ù† Ù„ÙØªØ­Ù‡ ÙÙŠ ØªØ¨ÙˆÙŠØ¨ Ø¬Ø¯ÙŠØ¯)"
-                                >
-                                  <span className="truncate max-w-[130px] dir-ltr text-left">
-                                    /doctors/{doc.slug}
-                                  </span>
-                                  <ExternalLink className="w-3 h-3 shrink-0 text-teal-600" />
-                                </a>
-                                <button
-                                  onClick={() => handleCopyLink(doc.slug)}
-                                  title="Ù†Ø³Ø® Ø§Ù„Ø±Ø§Ø¨Ø· Ø§Ù„Ù…Ø¨Ø§Ø´Ø± Ù„Ù…Ø´Ø§Ø±ÙƒØªÙ‡"
-                                  className="text-slate-400 hover:text-slate-700 p-1 rounded hover:bg-slate-100 transition shrink-0"
-                                >
-                                  {copiedSlug === doc.slug ? (
-                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                  ) : (
-                                    <Copy className="w-3.5 h-3.5" />
-                                  )}
-                                </button>
-                              </div>
-                            </td>
-
-                            {/* SEO Score */}
-                            <td className="py-3 px-4 text-center">
-                              <span
-                                className={`font-mono tabular-nums text-xs font-semibold ${
-                                  seoAudit.score >= 80
-                                    ? 'text-emerald-700'
-                                    : seoAudit.score >= 60
-                                    ? 'text-teal-700'
-                                    : 'text-amber-700'
-                                }`}
-                              >
-                                {seoAudit.score}%
-                              </span>
-                            </td>
-
-                            {/* Last Updated */}
-                            <td className="py-3 px-4 text-slate-500 font-mono text-[11px] tabular-nums">
-                              {new Date(doc.updatedAt || doc.createdAt).toLocaleDateString('ar-EG', {
-                                year: 'numeric',
-                                month: 'short',
-                                day: 'numeric',
-                              })}
-                            </td>
-
-                            {/* Actions Menu */}
-                            <td className="py-3 px-4 text-left">
-                              <div className="flex items-center justify-end gap-1">
-                                {/* Visual Website Builder Button */}
-                                {onOpenBuilder && (
-                                  <button
-                                    onClick={() => onOpenBuilder(doc)}
-                                    className="p-1.5 text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-md transition flex items-center gap-1 font-medium text-[11px]"
-                                    title="ÙØªØ­ Ù…ØµÙ…Ù… Ø§Ù„Ù…ÙˆØ§Ù‚Ø¹ Ø§Ù„Ù…Ø±Ø¦ÙŠ Ø§Ù„ØªÙØ§Ø¹Ù„ÙŠ (Website Builder)"
-                                  >
-                                    <Layout className="w-3.5 h-3.5" />
-                                    <span className="hidden xl:inline">Ø¨Ù†Ø§Ø¡ ÙˆØªØ®ØµÙŠØµ Ø§Ù„Ù…ÙˆÙ‚Ø¹</span>
-                                  </button>
-                                )}
-
-                                {/* Edit */}
-                                <button
-                                  onClick={() => onEditDoctor(doc, 'basic')}
-                                  className="p-1.5 text-slate-600 hover:text-teal-700 hover:bg-slate-100 rounded-md transition"
-                                  title="ØªØ¹Ø¯ÙŠÙ„ Ù…Ù„Ù Ø§Ù„Ø·Ø¨ÙŠØ¨ ÙˆÙ…Ø­ØªÙˆÙ‰ Ø§Ù„Ù…ÙˆÙ‚Ø¹"
-                                >
-                                  <Edit3 className="w-3.5 h-3.5" />
-                                </button>
-
-                                {/* Open in new tab */}
-                                <a
-                                  href={`/doctors/${doc.slug}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-1.5 text-slate-600 hover:text-teal-700 hover:bg-slate-100 rounded-md transition"
-                                  title="ÙØªØ­ Ù…ÙˆÙ‚Ø¹ Ø§Ù„Ø·Ø¨ÙŠØ¨ ÙÙŠ Ø¹Ù„Ø§Ù…Ø© ØªØ¨ÙˆÙŠØ¨ Ø¬Ø¯ÙŠØ¯Ø©"
-                                >
-                                  <ExternalLink className="w-3.5 h-3.5" />
-                                </a>
-
-                                {/* Live Preview / Public View */}
-                                <button
-                                  onClick={() => onPreviewDoctor(doc)}
-                                  className="p-1.5 text-slate-600 hover:text-teal-700 hover:bg-slate-100 rounded-md transition"
-                                  title="Ù…Ø¹Ø§ÙŠÙ†Ø© Ø§Ù„Ù…ÙˆÙ‚Ø¹ ÙƒØ²Ø§Ø¦Ø±"
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                </button>
-
-                                {/* Toggle Publish */}
-                                <button
-                                  onClick={() => onTogglePublish(doc)}
-                                  className={`p-1.5 rounded-md transition ${
-                                    doc.status === 'published'
-                                      ? 'text-emerald-700 hover:bg-emerald-50'
-                                      : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
-                                  }`}
-                                  title={doc.status === 'published' ? 'ØªØ­ÙˆÙŠÙ„ Ù„Ù…Ø³ÙˆØ¯Ø©' : 'Ù†Ø´Ø± Ø§Ù„Ù…ÙˆÙ‚Ø¹ Ù„Ù„Ø¬Ù…Ù‡ÙˆØ±'}
-                                >
-                                  <Globe className="w-3.5 h-3.5" />
-                                </button>
-
-                                {/* Duplicate */}
-                                <button
-                                  onClick={() => onDuplicateDoctor(doc.id)}
-                                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition"
-                                  title="ØªÙƒØ±Ø§Ø± ÙˆØ¥Ù†Ø´Ø§Ø¡ Ù†Ø³Ø®Ø© Ù…Ø·Ø§Ø¨Ù‚Ø©"
-                                >
-                                  <Copy className="w-3.5 h-3.5" />
-                                </button>
-
-                                {/* Delete */}
-                                <button
-                                  onClick={() => setDeleteConfirmId(doc.id)}
-                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition"
-                                  title="Ø­Ø°Ù Ø§Ù„Ù…Ù„Ù"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* ----------------- SECTION 2: ANALYTICS & SEO TAB ----------------- */}
-          {activeNav === 'analytics' && (
-            <AnalyticsAndSeoSection
-              doctors={doctors}
-              onEditDoctor={onEditDoctor}
-              onPreviewDoctor={onPreviewDoctor}
-            />
-          )}
-        </main>
-      </div>
-
-      {/* ----------------- DELETE CONFIRMATION MODAL ----------------- */}
-      {deleteConfirmId && doctorToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-          <div className="bg-white rounded-xl border border-slate-200 max-w-sm w-full p-5 space-y-4 shadow-xl">
-            <div className="flex items-center gap-3 text-rose-600">
-              <div className="w-9 h-9 rounded-lg bg-rose-50 flex items-center justify-center shrink-0">
-                <Trash2 className="w-5 h-5 text-rose-600" />
-              </div>
-              <h3 className="font-bold text-sm text-slate-900">Ø­Ø°Ù Ù…Ù„Ù Ø§Ù„Ø·Ø¨ÙŠØ¨ ÙˆÙ…ÙˆÙ‚Ø¹Ù‡</h3>
-            </div>
-
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Ù‡Ù„ Ø£Ù†Øª Ù…ØªØ£ÙƒØ¯ Ù…Ù† Ø±ØºØ¨ØªÙƒ ÙÙŠ Ø­Ø°Ù Ù…Ù„Ù Ø§Ù„Ø·Ø¨ÙŠØ¨{' '}
-              <strong className="text-slate-900">{doctorToDelete.fullName}</strong>ØŸ
-              Ø³ÙŠØªÙ… Ø¥Ø²Ø§Ù„Ø© Ø§Ù„Ù…ÙˆÙ‚Ø¹ Ø§Ù„Ø®Ø§Øµ Ø¨Ù‡ ÙˆÙ„Ù† ÙŠØ¹Ø¯ Ù…ØªØ§Ø­Ø§Ù‹ Ù„Ù„Ø²ÙˆØ§Ø±.
-            </p>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setDeleteConfirmId(null)}
-                disabled={isDeleting}
-                className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition"
-              >
-                Ø¥Ù„ØºØ§Ø¡
-              </button>
-              <button
-                type="button"
-                onClick={confirmDelete}
-                disabled={isDeleting}
-                className="px-3.5 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition disabled:opacity-50"
-              >
-                {isDeleting ? 'Ø¬Ø§Ø±Ù Ø§Ù„Ø­Ø°Ù...' : 'ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø­Ø°Ù'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ----------------- FIREBASE CONNECTION MODAL ----------------- */}
-      {showFirebaseModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-          <div className="bg-white rounded-xl border border-slate-200 max-w-lg w-full p-6 space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
-                  <Database className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900">
-                    Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª ÙˆØ§Ù„Ù…Ø²Ø§Ù…Ù†Ø© Ø§Ù„Ø³Ø­Ø§Ø¨ÙŠØ©
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    Firebase Cloud Firestore & Local Backup
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setShowFirebaseModal(false)}
-                className="p-1 text-slate-400 hover:text-slate-700 rounded-md"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Current Status Banner */}
-            <div
-              className={`p-3 rounded-lg border text-xs flex items-start gap-2.5 ${
-                dbStatus.isCloudConnected
-                  ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
-                  : 'bg-amber-50/70 border-amber-200 text-amber-900'
-              }`}
-            >
-              <Info className="w-4 h-4 shrink-0 mt-0.5" />
-              <div className="space-y-0.5">
-                <p className="font-bold">
-                  {dbStatus.isCloudConnected
-                    ? 'Ù…ØªØµÙ„ Ø­Ø§Ù„ÙŠØ§Ù‹ Ø¨Ù‚Ø§Ø¹Ø¯Ø© Ø¨ÙŠØ§Ù†Ø§Øª Firebase Firestore Ø§Ù„Ø³Ø­Ø§Ø¨ÙŠØ©'
-                    : 'Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª ØªÙØ­ÙØ¸ Ù…Ø­Ù„ÙŠØ§Ù‹ ÙÙŠ Ø°Ø§ÙƒØ±Ø© Ø§Ù„Ù…ØªØµÙØ­ (Local Demo Mode)'}
-                </p>
-                <p className="text-[11px] text-slate-600">
-                  {dbStatus.isCloudConnected
-                    ? 'ÙŠØªÙ… Ø­ÙØ¸ Ø£ÙŠ ØªØ¹Ø¯ÙŠÙ„ ÙˆÙ…Ø²Ø§Ù…Ù†ØªÙ‡ Ù…Ø±ÙƒØ²ÙŠØ§Ù‹ Ø¹Ø¨Ø± Ø§Ù„Ø³Ø­Ø§Ø¨Ø©.'
-                    : 'ÙŠÙ…ÙƒÙ†Ùƒ Ø¥Ø¯Ø®Ø§Ù„ Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ù…Ø´Ø±ÙˆØ¹ Firebase Ø§Ù„Ø®Ø§Øµ Ø¨Ùƒ Ù„Ù„Ù…Ø²Ø§Ù…Ù†Ø© Ø§Ù„Ø³Ø­Ø§Ø¨ÙŠØ© Ø§Ù„Ø¯Ø§Ø¦Ù…Ø©.'}
-                </p>
-              </div>
-            </div>
-
-            {/* Config Form */}
-            <form onSubmit={handleFirebaseConnectSubmit} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    API Key *
-                  </label>
-                  <input
-                    type="text"
-                    value={fbConfig.apiKey}
-                    onChange={(e) => setFbConfig({ ...fbConfig, apiKey: e.target.value })}
-                    placeholder="AIzaSy..."
-                    className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 font-mono"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Project ID *
-                  </label>
-                  <input
-                    type="text"
-                    value={fbConfig.projectId}
-                    onChange={(e) => setFbConfig({ ...fbConfig, projectId: e.target.value })}
-                    placeholder="my-medical-app"
-                    className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 font-mono"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Auth Domain
-                  </label>
-                  <input
-                    type="text"
-                    value={fbConfig.authDomain}
-                    onChange={(e) => setFbConfig({ ...fbConfig, authDomain: e.target.value })}
-                    placeholder="project.firebaseapp.com"
-                    className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    App ID
-                  </label>
-                  <input
-                    type="text"
-                    value={fbConfig.appId}
-                    onChange={(e) => setFbConfig({ ...fbConfig, appId: e.target.value })}
-                    placeholder="1:123456:web:abcd"
-                    className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 font-mono"
-                  />
-                </div>
-              </div>
-
-              {fbResultMsg && (
-                <div
-                  className={`p-2.5 rounded-lg text-xs font-medium ${
-                    fbResultMsg.success
-                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                      : 'bg-rose-50 text-rose-800 border border-rose-200'
-                  }`}
-                >
-                  {fbResultMsg.message}
-                </div>
-              )}
-
-              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                {dbStatus.isCloudConnected ? (
-                  <button
-                    type="button"
-                    onClick={onDisconnectFirebase}
-                    className="text-xs text-rose-600 hover:underline font-semibold"
-                  >
-                    Ù‚Ø·Ø¹ Ø§Ù„Ø§ØªØµØ§Ù„ ÙˆØ§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„ØªØ®Ø²ÙŠÙ† Ø§Ù„Ù…Ø­Ù„ÙŠ
-                  </button>
-                ) : (
-                  <span className="text-xs text-slate-500">Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø£Ø·Ø¨Ø§Ø¡ Ù…Ø­ÙÙˆØ¸Ø© ÙÙŠ Firebase</span>
-                )}
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowFirebaseModal(false)}
-                    className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg transition"
-                  >
-                    Ø¥ØºÙ„Ø§Ù‚
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={fbConnecting}
-                    className="px-4 py-1.5 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition disabled:opacity-50"
-                  >
-                    {fbConnecting ? 'Ø¬Ø§Ø±Ù Ø§Ù„Ø§ØªØµØ§Ù„...' : 'Ø­ÙØ¸ ÙˆØ§Ø®ØªØ¨Ø§Ø± Ø§Ù„Ø§ØªØµØ§Ù„'}
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éí×®ûñ:-jZ.¶›­–)Þ³V–×÷'B&V7BÂ²W6U7FFRÒg&öÒw&V7Bs°¦–×÷'B²Fö7F÷%&öf–ÆRÂf—&V&6T6öææV7F–öä6öæf–rÒg&öÒrââòââ÷G—W2öFö7F÷"s°¦–×÷'B²FF&6U7FGW2Òg&öÒrââòââ÷6W'f–6W2÷7F÷&vRs°¦–×÷'B²æÇ—F–74æE6Võ6V7F–öâÂVF—DFö7F÷%4TòÒg&öÒrâôæÇ—F–74æE6Võ6V7F–öâs°¦–×÷'B²Fö7F÷%V&Æ–5F‚ÂFö7F÷%V&Æ–5W&ÂÒg&öÒrââòââ÷6W'f–6W2÷W&Ç2s°¦–×÷'B°¢W6W'2À¢vÆö&RÀ¢f–ÆTVF—BÀ¢6Æö6²À¢ÇW2À¢6V&6‚À¢W‡FW&æÄÆ–æ²À¢6÷’À¢G&6ƒ"À¢VF—C2À¢W–RÀ¢6†V6²À¢Æ–÷WBÀ¢7FWF†÷66÷RÀ¢6†–VÆBÀ¢Æ–W'2À¢&$6†'C2À¢6Æ÷VBÀ¢FF&6RÀ¢F÷væÆöBÀ¢WÆöBÀ¢&Vg&W6„7rÀ¢ÆW'EG&–ævÆRÀ¢ÖVçRÀ¢‚À¢6†Wg&öå&–v‡BÀ¢6†–VÆD6†V6²À¢6†V6´6—&6ÆS"À¢6WGF–æw2À¢'&÷uW&–v‡BÀ¢f–ÇFW"À¢7&¶ÆW2À¢6†Wg&öäF÷vâÀ¢–æfòÀ¢Æöt÷WBÀ§Òg&öÒvÇV6–FR×&V7Bs° ¦–çFW&f6RF6†&ö&E&÷2°¢Fö7F÷'3¢Fö7F÷%&öf–ÆUµÓ°¢F%7FGW3¢FF&6U7FGW3°¢öäFDFö7F÷#¢‚’Óâfö–C°¢öäVF—DFö7F÷#¢€¢Fö7F÷#¢Fö7F÷%&öf–ÆRÀ¢F#ó¢v&6–2rÂv6Æ–æ–2rÂwVÆ–f–6F–öç2rÂw6W'f–6W2rÂv6öçFVçBrÂv'&æF–ærp¢’Óâfö–C°¢öä÷Vä'V–ÆFW#ó¢†Fö7F÷#¢Fö7F÷%&öf–ÆR’Óâfö–C°¢öå&Wf–WtFö7F÷#¢†Fö7F÷#¢Fö7F÷%&öf–ÆR’Óâfö–C°¢öäGWÆ–6FTFö7F÷#¢†–C¢7G&–ær’Óâ&öÖ—6SÇfö–Cã°¢öäFVÆWFTFö7F÷#¢†–C¢7G&–ær’Óâ&öÖ—6SÇfö–Cã°¢öåFövvÆUV&Æ—6ƒ¢†Fö7F÷#¢Fö7F÷%&öf–ÆR’Óâ&öÖ—6SÇfö–Cã°¢öä÷VåV&Æ–5W&Ã¢‡6ÇVs¢7G&–ær’Óâfö–C°¢öä6öææV7Df—&V&6S¢€¢6öæf–s¢f—&V&6T6öææV7F–öä6öæf–p¢’Óâ&öÖ—6SÇ²7V66W73¢&ööÆVã²ÖW76vS¢7G&–æs²7FWó¢7G&–æs²f—„wV–FSó¢7G&–ærÓã°¢öäF—66öææV7Df—&V&6S¢‚’Óâfö–C°¢öäW‡÷'D§6öã¢‚’Óâfö–C°¢öä–×÷'D§6öã¢†§6öã¢7G&–ær’Óâ&öÖ—6SÆçVÖ&W#ã°¢7W'&VçDFÖ–ãó¢²VÖ–Ã¢7G&–æs²V–C¢7G&–æs²—4f—&V&6UW6W#¢&ööÆVâÒÂçVÆÃ°¢öäÆöv÷WCó¢‚’Óâfö–C°§Ð §G—Ræf–vF–öåF"Òv÷fW'f–WrrÂvFö7F÷'2rÂvæÇ—F–72rÂvFF&6Rs° ¦W‡÷'B6öç7BF6†&ö&C¢&V7Bäd3ÄF6†&ö&E&÷3âÒ‡°¢Fö7F÷'2À¢F%7FGW2À¢öäFDFö7F÷"À¢öäVF—DFö7F÷"À¢öä÷Vä'V–ÆFW"À¢öå&Wf–WtFö7F÷"À¢öäGWÆ–6FTFö7F÷"À¢öäFVÆWFTFö7F÷"À¢öåFövvÆUV&Æ—6‚À¢öä÷VåV&Æ–5W&ÂÀ¢öä6öææV7Df—&V&6RÀ¢öäF—66öææV7Df—&V&6RÀ¢öäW‡÷'D§6öâÀ¢öä–×÷'D§6öâÀ¢7W'&VçDFÖ–âÀ¢öäÆöv÷WBÀ§Ò’Óâ°¢6öç7B¶7F—fTæbÂ6WD7F—fTæeÒÒW6U7FFSÄæf–vF–öåF#â‚v÷fW'f–Wrr“°¢6öç7B·6V&6…VW'’Â6WE6V&6…VW'•ÒÒW6U7FFR‚rr“°¢6öç7B·7FGW4f–ÇFW"Â6WE7FGW4f–ÇFW%ÒÒW6U7FFSÇ7G&–æsâ‚vÆÂr“°¢6öç7B¶FVÆWFT6öæf—&Ô–BÂ6WDFVÆWFT6öæf—&Ô–EÒÒW6U7FFSÇ7G&–ærÂçVÆÃâ†çVÆÂ“°¢6öç7B¶—4FVÆWF–ærÂ6WD—4FVÆWF–æuÒÒW6U7FFR†fÇ6R“°¢6öç7B·6†÷tf—&V&6TÖöFÂÂ6WE6†÷tf—&V&6TÖöFÅÒÒW6U7FFR†fÇ6R“°¢6öç7B¶6÷–VE6ÇVrÂ6WD6÷–VE6ÇVuÒÒW6U7FFSÇ7G&–ærÂçVÆÃâ†çVÆÂ“°¢6öç7B¶Öö&–ÆTÖVçT÷VâÂ6WDÖö&–ÆTÖVçT÷VåÒÒW6U7FFR†fÇ6R“° ¢òòf—&V&6R6öæf–rf÷&Ò7FFP¢6öç7B¶f$6öæf–rÂ6WDf$6öæf–uÒÒW6U7FFSÄf—&V&6T6öææV7F–öä6öæf–sâ‡°¢”¶W“¢F%7FGW2æ6öæf–sòæ”¶W’ÇÂrrÀ¢WF„FöÖ–ã¢F%7FGW2æ6öæf–sòæWF„FöÖ–âÇÂrrÀ¢&ö¦V7D–C¢F%7FGW2æ6öæf–sòç&ö¦V7D–BÇÂrrÀ¢7F÷&vT'V6¶WC¢F%7FGW2æ6öæf–sòç7F÷&vT'V6¶WBÇÂrrÀ¢ÖW76v–æu6VæFW$–C¢F%7FGW2æ6öæf–sòæÖW76v–æu6VæFW$–BÇÂrrÀ¢–C¢F%7FGW2æ6öæf–sòæ–BÇÂrrÀ¢Ò“°¢6öç7B¶f$6öææV7F–ærÂ6WDf$6öææV7F–æuÒÒW6U7FFR†fÇ6R“°¢6öç7B¶f%&W7VÇD×6rÂ6WDf%&W7VÇD×6uÒÒW6U7FFSÇ°¢7V66W73¢&ööÆVã°¢ÖW76vS¢7G&–æs°¢7FWó¢7G&–æs°¢f—„wV–FSó¢7G&–æs°¢ÒÂçVÆÃâ†çVÆÂ“° ¢òòÖWG&–70¢6öç7BF÷FÄ6÷VçBÒFö7F÷'2æÆVæwFƒ°¢6öç7BV&Æ—6†VD6÷VçBÒFö7F÷'2æf–ÇFW"‚†B’ÓâBç7FGW2ÓÓÒwV&Æ—6†VBr’æÆVæwFƒ°¢6öç7BG&gD6÷VçBÒFö7F÷'2æf–ÇFW"‚†B’ÓâBç7FGW2ÓÓÒvG&gBr’æÆVæwFƒ°¢6öç7BVæF–æt6÷VçBÒFö7F÷'2æf–ÇFW"‚†B’ÓâBç7FGW2ÓÓÒwVæF–ærr’æÆVæwFƒ° ¢òòf–ÇFW&VBFö7F÷'0¢6öç7Bf–ÇFW&VDFö7F÷'2ÒFö7F÷'2æf–ÇFW"‚†Fö2’Óâ°¢6öç7BÖF6†W4f–ÇFW"Ò7FGW4f–ÇFW"ÓÓÒvÆÂròG'VR¢Fö2ç7FGW2ÓÓÒ7FGW4f–ÇFW#°¢6öç7BVW'’Ò6V&6…VW'’çG&–Ò‚’çFôÆ÷vW$66R‚“°¢6öç7BÖF6†W5VW'’Ð¢VW'’ÇÀ¢Fö2ægVÆÄæÖRçFôÆ÷vW$66R‚’æ–æ6ÇVFW2‡VW'’’ÇÀ¢Fö2ç7V6–ÇG’çFôÆ÷vW$66R‚’æ–æ6ÇVFW2‡VW'’’ÇÀ¢Fö2ç6ÇVrçFôÆ÷vW$66R‚’æ–æ6ÇVFW2‡VW'’’ÇÀ¢Fö2æ6Æ–æ–3òææÖSòçFôÆ÷vW$66R‚’æ–æ6ÇVFW2‡VW'’’ÇÀ¢Fö2æ6Æ–æ–3òæ6—G“òçFôÆ÷vW$66R‚’æ–æ6ÇVFW2‡VW'’“° ¢&WGW&âÖF6†W4f–ÇFW"bbÖF6†W5VW'“°¢Ò“° ¢6öç7B†æFÆT6÷”Æ–æ²Ò‡6ÇVs¢7G&–ær’Óâ°¢6öç7BF‚ÒFö7F÷%V&Æ–5W&Â‡6ÇVr“°¢–b†æf–vF÷"æ6Æ—&ö&B’°¢æf–vF÷"æ6Æ—&ö&Bçw&—FUFW‡B‡F‚“°¢6WD6÷–VE6ÇVr‡6ÇVr“°¢6WEF–ÖV÷WB‚‚’Óâ6WD6÷–VE6ÇVr†çVÆÂ’Â##“°¢Ð¢Ó° ¢6öç7B6öæf—&ÔFVÆWFRÒ7–æ2‚’Óâ°¢–b‚FVÆWFT6öæf—&Ô–B’&WGW&ã°¢G'’°¢6WD—4FVÆWF–ær‡G'VR“°¢v—BöäFVÆWFTFö7F÷"†FVÆWFT6öæf—&Ô–B“°¢6WDFVÆWFT6öæf—&Ô–B†çVÆÂ“°¢Òf–æÆÇ’°¢6WD—4FVÆWF–ær†fÇ6R“°¢Ð¢Ó° ¢6öç7B†æFÆTf—&V&6T6öææV7E7V&Ö—BÒ7–æ2†S¢&V7Bäf÷&ÔWfVçB’Óâ°¢Rç&WfVçDFVfVÇB‚“°¢–b‚f$6öæf–ræ”¶W’ÇÂf$6öæf–rç&ö¦V7D–B’°¢ÆW'B‚}˜­‹ŠÍ˜’Š]ŠýŠíŠ}˜B”¶W’˜‚&ö¦V7D–B‹˜M˜’Š}˜MŠ=˜-˜Bâr“°¢&WGW&ã°¢Ð¢G'’°¢6WDf$6öææV7F–ær‡G'VR“°¢6WDf%&W7VÇD×6r†çVÆÂ“°¢6öç7B&W2Òv—Böä6öææV7Df—&V&6R†f$6öæf–r“°¢6WDf%&W7VÇD×6r‡&W2“°¢–b‡&W2ç7V66W72’°¢6WEF–ÖV÷WB‚‚’Óâ6WE6†÷tf—&V&6TÖöFÂ†fÇ6R’Â#“°¢Ð¢Òf–æÆÇ’°¢6WDf$6öææV7F–ær†fÇ6R“°¢Ð¢Ó° ¢6öç7B†æFÆT–×÷'Df–ÆRÒ†S¢&V7Bä6†ævTWfVçCÄ…DÔÄ–çWDVÆVÖVçCâ’Óâ°¢6öç7Bf–ÆRÒRçF&vWBæf–ÆW3òå³Ó°¢–b†f–ÆR’°¢6öç7B&VFW"ÒæWrf–ÆU&VFW"‚“°¢&VFW"æöæÆöBÒ7–æ2†WfVçB’Óâ°¢6öç7B6öçFVçBÒWfVçBçF&vWCòç&W7VÇB27G&–æs°¢–b†6öçFVçB’°¢G'’°¢6öç7B6÷VçBÒv—Böä–×÷'D§6öâ†6öçFVçB“°¢ÆW'B†Š­˜RŠ}‹=Š­˜­‹Š}ŠòG¶6÷VçGÒ˜]˜M˜‹}Š˜­Š‚Š˜mŠÍŠ}ŠÒ“°¢Ò6F6‚†W'"’°¢ÆW'B†W'"–ç7Fæ6VöbW'&÷"òW'"æÖW76vR¢}˜‹M˜BŠ}˜MŠ}‹=Š­˜­‹Š}Šòr“°¢Ð¢Ð¢Ó°¢&VFW"ç&VD5FW‡B†f–ÆR“°¢Ð¢Ó° ¢6öç7BFö7F÷%FôFVÆWFRÒFö7F÷'2æf–æB‚†B’ÓâBæ–BÓÓÒFVÆWFT6öæf—&Ô–B“° ¢&WGW&â€¢ÆF—bF—#Ò''FÂ"6Æ74æÖSÒ&Ö–âÖ‚×67&VVâ&r×6ÆFRÓSóƒFW‡B×6ÆFRÓ“fÆW‚föçB×6ç2çF–Æ–6VB6VÆV7F–öã¦&r×FVÂÓS6VÆV7F–öã§FW‡B×v†—FR#à¢²ò¢ÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒ$”t…B4”DT$"…%DÂÆ–æV"õ7G&—R7G–ÆR’ÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒ¢÷Ð¢Æ6–FP¢6Æ74æÖS×¶f—†VB–ç6WB×’Ó&–v‡BÓ¢ÓCrÓcB&r×v†—FR&÷&FW"ÖÂ&÷&FW"×6ÆFRÓ#ó“fÆW‚fÆW‚Ö6öÂ§W7F–g’Ö&WGvVVâG&ç6—F–öâ×G&ç6f÷&ÒGW&F–öâÓ#V6RÖ–âÖ÷WBÆs§G&ç6ÆFR×‚ÓG°¢Öö&–ÆTÖVçT÷VâòwG&ç6ÆFR×‚Ó6†F÷rÓ'†Âr¢wG&ç6ÆFR×‚ÖgVÆÂÆs§G&ç6ÆFR×‚Óp¢ÖÐ¢à¢ÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚Ö6öÂ‚ÖgVÆÂ#à¢²ò¢Æövòb'&æB¢÷Ð¢ÆF—b6Æ74æÖSÒ&‚Ób‚ÓRfÆW‚—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâ&÷&FW"Ö"&÷&FW"×6ÆFRÓ#à¢ÆF—b6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"vÓ"ãR#à¢ÆF—b6Æ74æÖSÒ'rÓ’‚Ó’&÷VæFVB×†Â&r×6ÆFRÓ“FW‡B×6·’Ó3fÆW‚—FV×2Ö6VçFW"§W7F–g’Ö6VçFW"föçBÖ&Æ6²FW‡B×‡2G&6¶–ær×F–v‡B&–ærÓ&–ær×6ÆFRÓƒ#à¢Ç7â6Æ74æÖSÒ&&÷&FW"ÖÂÓ"&÷&FW"×BÓ"&÷&FW"×6·’ÓC‚ÓãR’Ó#äÔcÂ÷7ãà¢ÂöF—cà¢ÆF—b6Æ74æÖSÒ&fÆW‚fÆW‚Ö6öÂ#à¢Ç7â6Æ74æÖSÒ&föçBÖ&öÆBFW‡B×6ÒG&6¶–ær×F–v‡BFW‡B×6ÆFRÓ“ÆVF–ær×F–v‡B#à¢ÖVDg&ÖR7GVF–ð¢Â÷7ãà¢Ç7â6Æ74æÖSÒ'FW‡BÕ³…ÒFW‡B×6ÆFRÓSföçBÖÖVF—VÒÆVF–ær×F–v‡B#à¢–÷W"W‡W'F—6Râ–÷W"–FVçF—G’à¢Â÷7ãà¢ÂöF—cà¢ÂöF—cà ¢Æ'WGFöà¢öä6Æ–6³×²‚’Óâ6WDÖö&–ÆTÖVçT÷Vâ†fÇ6R—Ð¢6Æ74æÖSÒ&Æs¦†–FFVâÓãRFW‡B×6ÆFRÓC†÷fW#§FW‡B×6ÆFRÓs&÷VæFVBÖÖB ¢&–ÖÆ&VÃÒ-Š]‹­˜MŠ}˜"Š}˜M˜-Š}Šm˜]Š’ ¢à¢Å‚6Æ74æÖSÒ'rÓB‚ÓB"óà¢Âö'WGFöãà¢ÂöF—cà ¢²ò¢&–Ö'’7F–öâ'WGFöâ¢÷Ð¢ÆF—b6Æ74æÖSÒ'Ó2#à¢Æ'WGFöà¢öä6Æ–6³×¶öäFDFö7F÷'Ð¢6Æ74æÖSÒ'rÖgVÆÂfÆW‚—FV×2Ö6VçFW"§W7F–g’Ö6VçFW"vÓ"‚Ó2ãR’Ó"ãR&÷VæFVBÖÆr&r×FVÂÓc†÷fW#¦&r×FVÂÓs7F—fS§66ÆRÕ³ã“•ÒFW‡B×v†—FRFW‡B×‡2föçB×6VÖ–&öÆBG&ç6—F–öâ6†F÷r×‡2 ¢à¢ÅÇW26Æ74æÖSÒ'rÓB‚ÓB7G&ö¶RÕ³"ã%Ò"óà¢Ç7ãíŠ]‹mŠ}˜Š’Šý˜=Š­˜‹ŠÍŠý˜­ŠóÂ÷7ãà¢Âö'WGFöãà¢ÂöF—cà ¢²ò¢æf–vF–öâ—FV×2¢÷Ð¢Ææb6Æ74æÖSÒ'‚Ó"76R×’ÓãRfÆW‚Ó#à¢Æ'WGFöà¢öä6Æ–6³×²‚’Óâ°¢6WD7F—fTæb‚v÷fW'f–Wrr“°¢6WDÖö&–ÆTÖVçT÷Vâ†fÇ6R“°¢×Ð¢6Æ74æÖS×¶rÖgVÆÂfÆW‚—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâ‚Ó2’Ó"&÷VæFVBÖÆrFW‡B×‡2föçBÖÖVF—VÒG&ç6—F–öâG°¢7F—fTæbÓÓÒv÷fW'f–Wrp¢òv&r×6ÆFRÓFW‡B×6ÆFRÓ“föçB×6VÖ–&öÆBp¢¢wFW‡B×6ÆFRÓc†÷fW#¦&r×6ÆFRÓS†÷fW#§FW‡B×6ÆFRÓ“p¢ÖÐ¢à¢ÆF—b6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"vÓ"ãR#à¢ÄÆ–W'26Æ74æÖS×¶rÓB‚ÓBG¶7F—fTæbÓÓÒv÷fW'f–WrròwFW‡B×FVÂÓcr¢wFW‡B×6ÆFRÓCwÖÒóà¢Ç7ãí˜M˜ŠÝŠ’Š}˜MŠ­ŠÝ˜=˜RŠ}˜M‹Šm˜­‹=˜­Š“Â÷7ãà¢ÂöF—cà¢Âö'WGFöãà ¢Æ'WGFöà¢öä6Æ–6³×²‚’Óâ°¢6WD7F—fTæb‚vFö7F÷'2r“°¢6WDÖö&–ÆTÖVçT÷Vâ†fÇ6R“°¢×Ð¢6Æ74æÖS×¶rÖgVÆÂfÆW‚—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâ‚Ó2’Ó"&÷VæFVBÖÆrFW‡B×‡2föçBÖÖVF—VÒG&ç6—F–öâG°¢7F—fTæbÓÓÒvFö7F÷'2p¢òv&r×6ÆFRÓFW‡B×6ÆFRÓ“föçB×6VÖ–&öÆBp¢¢wFW‡B×6ÆFRÓc†÷fW#¦&r×6ÆFRÓS†÷fW#§FW‡B×6ÆFRÓ“p¢ÖÐ¢à¢ÆF—b6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"vÓ"ãR#à¢ÅW6W'26Æ74æÖS×¶rÓB‚ÓBG¶7F—fTæbÓÓÒvFö7F÷'2ròwFW‡B×FVÂÓcr¢wFW‡B×6ÆFRÓCwÖÒóà¢Ç7ãíŠý˜M˜­˜B˜]˜Š}˜-‹’Š}˜MŠ=‹}ŠŠ}ŠÂ÷7ãà¢ÂöF—cà¢Ç7â6Æ74æÖSÒ&föçBÖÖöæòFW‡BÕ³…ÒFW‡B×6ÆFRÓSF'VÆ"ÖçV×2#à¢·F÷FÄ6÷VçGÐ¢Â÷7ãà¢Âö'WGFöãà ¢Æ'WGFöà¢öä6Æ–6³×²‚’Óâ°¢6WD7F—fTæb‚væÇ—F–72r“°¢6WDÖö&–ÆTÖVçT÷Vâ†fÇ6R“°¢×Ð¢6Æ74æÖS×¶rÖgVÆÂfÆW‚—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâ‚Ó2’Ó"&÷VæFVBÖÆrFW‡B×‡2föçBÖÖVF—VÒG&ç6—F–öâG°¢7F—fTæbÓÓÒvæÇ—F–72p¢òv&r×6ÆFRÓFW‡B×6ÆFRÓ“föçB×6VÖ–&öÆBp¢¢wFW‡B×6ÆFRÓc†÷fW#¦&r×6ÆFRÓS†÷fW#§FW‡B×6ÆFRÓ“p¢ÖÐ¢à¢ÆF—b6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"vÓ"ãR#à¢Ä&$6†'C26Æ74æÖS×¶rÓB‚ÓBG¶7F—fTæbÓÓÒvæÇ—F–72ròwFW‡B×FVÂÓcr¢wFW‡B×6ÆFRÓCwÖÒóà¢Ç7ãíŠ}˜M‹-˜­Š}‹Š}Š¢˜˜]ŠM‹M‹Š}Š¢4TóÂ÷7ãà¢ÂöF—cà¢Ç7â6Æ74æÖSÒ'FW‡BÕ³…ÒFW‡B×FVÂÓs&r×FVÂÓS‚ÓãR’ÓãR&÷VæFVBföçBÖÖVF—VÒ#à¢Æ—fP¢Â÷7ãà¢Âö'WGFöãà ¢Æ'WGFöà¢öä6Æ–6³×²‚’Óâ°¢6WE6†÷tf—&V&6TÖöFÂ‡G'VR“°¢6WDÖö&–ÆTÖVçT÷Vâ†fÇ6R“°¢×Ð¢6Æ74æÖSÒ'rÖgVÆÂfÆW‚—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâ‚Ó2’Ó"&÷VæFVBÖÆrFW‡B×‡2föçBÖÖVF—VÒFW‡B×6ÆFRÓc†÷fW#¦&r×6ÆFRÓS†÷fW#§FW‡B×6ÆFRÓ“G&ç6—F–öâ ¢à¢ÆF—b6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"vÓ"ãR#à¢¶F%7FGW2æ—46Æ÷VD6öææV7FVBò€¢Ä6Æ÷VB6Æ74æÖSÒ'rÓB‚ÓBFW‡BÖVÖW&ÆBÓc"óà¢’¢€¢ÄFF&6R6Æ74æÖSÒ'rÓB‚ÓBFW‡B×6ÆFRÓC"óà¢—Ð¢Ç7ãí˜-Š}‹ŠýŠ’Š}˜MŠ˜­Š}˜mŠ}Š£Â÷7ãà¢ÂöF—cà¢Ç7â6Æ74æÖSÒ'FW‡BÕ³…ÒFW‡B×6ÆFRÓSföçBÖÖVF—VÒ#à¢¶F%7FGW2æ—46Æ÷VD6öææV7FVBòtf—&W7F÷&Rr¢}˜]ŠÝ˜M˜¢wÐ¢Â÷7ãà¢Âö'WGFöãà¢Âöæcà ¢²ò¢6–FV&"&÷GFöÓ¢7F÷&vRÖöFRbFÖ–â&öf–ÆR¢÷Ð¢ÆF—b6Æ74æÖSÒ'Ó2&÷&FW"×B&÷&FW"×6ÆFRÓ76R×’Ó"#à¢Æ'WGFöà¢öä6Æ–6³×²‚’Óâ6WE6†÷tf—&V&6TÖöFÂ‡G'VR—Ð¢6Æ74æÖSÒ'rÖgVÆÂÓ"ãR&÷VæFVBÖÆr&r×6ÆFRÓS†÷fW#¦&r×6ÆFRÓó“&÷&FW"&÷&FW"×6ÆFRÓ#ósG&ç6—F–öâFW‡B×&–v‡BfÆW‚—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâ ¢à¢ÆF—b6Æ74æÖSÒ&Ö–â×rÓ#à¢ÆF—b6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"vÓãRFW‡B×‡2föçB×6VÖ–&öÆBFW‡B×6ÆFRÓƒ#à¢Ç7à¢6Æ74æÖS×¶rÓ"‚Ó"&÷VæFVBÖgVÆÂ6‡&–æ²ÓG°¢F%7FGW2æ—46Æ÷VD6öææV7FVBòv&rÖVÖW&ÆBÓSr¢v&rÖÖ&W"ÓSp¢ÖÐ¢ãÂ÷7ãà¢Ç7â6Æ74æÖSÒ'G'Væ6FR#à¢¶F%7FGW2æ—46Æ÷VD6öææV7FVBòtf—&V&6R‹=ŠÝŠ}Š˜¢r¢}Š­Ší‹-˜­˜bŠ}˜M˜]Š­‹]˜ŠÒŠ}˜M˜]ŠÝ˜M˜¢wÐ¢Â÷7ãà¢ÂöF—cà¢Ç6Æ74æÖSÒ'FW‡BÕ³…ÒFW‡B×6ÆFRÓCG'Væ6FR×BÓãR#à¢¶F%7FGW2æ—46Æ÷VD6öææV7FVBò}Š}˜M˜]‹-Š}˜]˜mŠ’Š}˜M‹=ŠÝŠ}Š˜­Š’˜m‹M‹}Š’r¢}Š}‹m‹­‹r˜M˜M‹Š‹rŠŠ}˜M‹=ŠÝŠ}ŠŠ’wÐ¢Â÷à¢ÂöF—cà¢Å6WGF–æw26Æ74æÖSÒ'rÓ2ãR‚Ó2ãRFW‡B×6ÆFRÓC6‡&–æ²Ó"óà¢Âö'WGFöãà ¢²ò¢FÖ–â–FVçF—G’bÆöv÷WB¢÷Ð¢ÆF—b6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâÓ"&÷VæFVBÖÆr&r×6ÆFRÓS&÷&FW"&÷&FW"×6ÆFRÓ#óc#à¢ÆF—b6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"vÓ"Ö–â×rÓfÆW‚Ó#à¢ÆF—b6Æ74æÖSÒ'rÓr‚Ór&÷VæFVBÖgVÆÂ&r×6ÆFRÓ“FW‡B×FVÂÓCfÆW‚—FV×2Ö6VçFW"§W7F–g’Ö6VçFW"föçBÖ&öÆBFW‡B×‡2&–ærÓ&–ær×6ÆFRÓ#6‡&–æ²Ó#à¢¶7W'&VçDFÖ–ãòæVÖ–Ãòæ6†$Bƒ’çFõWW$66R‚’ÇÂtwÐ¢ÂöF—cà¢ÆF—b6Æ74æÖSÒ&Ö–â×rÓfÆW‚Ó#à¢Ç6Æ74æÖSÒ&föçB×6VÖ–&öÆBFW‡B×‡2FW‡B×6ÆFRÓ“G'Væ6FR"F—FÆS×¶7W'&VçDFÖ–ãòæVÖ–ÂÇÂ}˜]‹=ŠM˜˜BŠ}˜M˜m‹Š}˜RwÓà¢¶7W'&VçDFÖ–ãòæVÖ–ÂÇÂ}˜]‹=ŠM˜˜BŠ}˜M˜m‹Š}˜RwÐ¢Â÷à¢Ç6Æ74æÖSÒ'FW‡BÕ³…ÒFW‡B×6ÆFRÓSG'Væ6FR#à¢¶7W'&VçDFÖ–ãòæ—4f—&V&6UW6W"òtf—&V&6RWF‚r¢}ŠÍ˜M‹=Š’˜]ŠÝ˜M˜­Š’wÐ¢Â÷à¢ÂöF—cà¢ÂöF—cà¢¶öäÆöv÷WBbb€¢Æ'WGFöà¢öä6Æ–6³×¶öäÆöv÷WGÐ¢6Æ74æÖSÒ'ÓãRFW‡B×6ÆFRÓC†÷fW#§FW‡B×&÷6RÓc†÷fW#¦&r×&÷6RÓS&÷VæFVBÖÖBG&ç6—F–öâ6‡&–æ²Ó ¢F—FÆSÒ-Š­‹=ŠÍ˜­˜BŠ}˜MŠí‹˜ŠÂ˜]˜b˜M˜ŠÝŠ’Š}˜MŠ]ŠýŠ}‹Š’ ¢à¢ÄÆöt÷WB6Æ74æÖSÒ'rÓ2ãR‚Ó2ãR"óà¢Âö'WGFöãà¢—Ð¢ÂöF—cà¢ÂöF—cà¢ÂöF—cà¢Âö6–FSà ¢²ò¢&6¶G&÷f÷"Öö&–ÆR¢÷Ð¢¶Öö&–ÆTÖVçT÷Vâbb€¢ÆF—`¢öä6Æ–6³×²‚’Óâ6WDÖö&–ÆTÖVçT÷Vâ†fÇ6R—Ð¢6Æ74æÖSÒ&f—†VB–ç6WBÓ¢Ó3&r×6ÆFRÓ“óC&6¶G&÷Ö&ÇW"×‡2Æs¦†–FFVâ ¢ãÂöF—cà¢—Ð ¢²ò¢ÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÔ”âtõ$µ54RÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒ¢÷Ð¢ÆF—b6Æ74æÖSÒ&fÆW‚ÓfÆW‚fÆW‚Ö6öÂÖ–â×rÓÆs¦×"ÓcB#à¢²ò¢F÷†VFW"&"¢÷Ð¢Æ†VFW"6Æ74æÖSÒ&‚Ób&r×v†—FR&÷&FW"Ö"&÷&FW"×6ÆFRÓ#óƒ‚Ób6Ó§‚Ó‚fÆW‚—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâ7F–6·’»ïËh‘éì¶»§q«^tˆÙ[Ð]Y]œØÛÜ™HHŒˆÈ	Ý^]X[MÌ	Âˆˆ	Ý^X[X™\‹MÌ	ÂˆXBˆ‚ˆÜÙ[Ð]Y]œØÛÜ™_IBˆÜÜ[‚ˆÝ‚‚ˆËÊˆ\Ý\]Y
+‹ßBˆÛ\ÜÓ˜[YOHœKLÈM^\Û]KML›Û[[Û›È^VÌL\HX[\‹[[\È‚ˆÛ™]È]JØË\]Y]ØË˜Ü™X]Y]
+KÓØØ[Q]TÝš[™Ê	Ø\‹QQÉËÂˆYX\Žˆ	Û[Y\šXÉËˆ[Ûˆ	ÜÚÜ	Ëˆ^Nˆ	Û[Y\šXÉËˆJ_BˆÝ‚‚ˆËÊˆXÝ[ÛœÈY[H
+‹ßBˆÛ\ÜÓ˜[YOHœKLÈM^[Y‚ˆ]ˆÛ\ÜÓ˜[YOH™›^][\ËXÙ[\ˆ\ÝYžKY[™Ø\LH‚ˆËÊˆš\ÝX[ÙXœÚ]HZ[\ˆ]Ûˆ
+‹ßBˆÛÛ“Ü[Z[\ˆ	‰ˆ
+ˆ]Û‚ˆÛÛXÚÏ^Ê
+HOˆÛ“Ü[Z[\ŠØÊ_BˆÛ\ÜÓ˜[YOHœLKH^]X[MÌ™Ë]X[MLÝ™\Ž˜™Ë]X[LL›Ý[™Y[Y˜[œÚ][Ûˆ›^][\ËXÙ[\ˆØ\LH›Û[YY][H^VÌL\H‚ˆ]OH¶`v*¶+H6av-vavaH6)öa6avb6)ö`¶.H6)öa6av,v)¶bˆ6)öa6*¶`v)ö.va6bˆ
+ÙXœÚ]HZ[\ŠH‚ˆ‚ˆ^[Ý]Û\ÜÓ˜[YOHËLËHLËHˆÏ‚ˆÜ[ˆÛ\ÜÓ˜[YOHšY[ˆš[›[™H¶*6a¶)ö(H6b6*¶+¶-vb¶-H6)öa6avb6`¶.OÜÜ[‚ˆØ]Û‚ˆ
+_B‚ˆËÊˆY]
+‹ßBˆ]Û‚ˆÛÛXÚÏ^Ê
+HOˆÛ‘Y]ØÝÜŠØË	Ø˜\ÚXÉÊ_BˆÛ\ÜÓ˜[YOHœLKH^\Û]KMŒÝ™\Ž^]X[MÌÝ™\Ž˜™Ë\Û]KLL›Ý[™Y[Y˜[œÚ][Ûˆ‚ˆ]OH¶*¶.v+öb¶a6ava6`H6)öa6-ö*6b¶*6b6av+v*¶b6bH6)öa6avb6`¶.H‚ˆ‚ˆY]ÈÛ\ÜÓ˜[YOHËLËHLËHˆÏ‚ˆØ]Û‚‚ˆËÊˆÜ[ˆ[ˆ™]ÈXˆ
+‹ßBˆBˆ™Y^ÙØÝÜ”X›XÔ]
+ØËœÛYÊ_Bˆ\™Ù]H—Ø›[šÈ‚ˆ™[H››ÛÜ[™\ˆ›Ü™Y™\œ™\ˆ‚ˆÛ\ÜÓ˜[YOHœLKH^\Û]KMŒÝ™\Ž^]X[MÌÝ™\Ž˜™Ë\Û]KLL›Ý[™Y[Y˜[œÚ][Ûˆ‚ˆ]OH¶`v*¶+H6avb6`¶.H6)öa6-ö*6b¶*6`vbˆ6.va6)öav*H6*¶*6b6b¶*6+6+öb¶+ö*H‚ˆ‚ˆ^\›˜[[šÈÛ\ÜÓ˜[YOHËLËHLËHˆÏ‚ˆØO‚‚ˆËÊˆ]™H™]šY]ÈÈX›XÈšY]È
+‹ßBˆ]Û‚ˆÛÛXÚÏ^Ê
+HOˆÛ”™]šY]ÑØÝÜŠØÊ_BˆÛ\ÜÓ˜[YOHœLKH^\Û]KMŒÝ™\Ž^]X[MÌÝ™\Ž˜™Ë\Û]KLL›Ý[™Y[Y˜[œÚ][Ûˆ‚ˆ]OH¶av.v)öb¶a¶*H6)öa6avb6`¶.H6`ö,¶)ö)¶,H‚ˆ‚ˆ^YHÛ\ÜÓ˜[YOHËLËHLËHˆÏ‚ˆØ]Û‚‚ˆËÊˆÙÙÛHX›\Ú
+‹ßBˆ]Û‚ˆÛÛXÚÏ^Ê
+HOˆÛ•ÙÙÛTX›\Ú
+ØÊ_BˆÛ\ÜÓ˜[YO^ØLKH›Ý[™Y[Y˜[œÚ][Ûˆ	ÂˆØËœÝ]\ÈOOH	ÜX›\ÚY	ÂˆÈ	Ý^Y[Y\˜[MÌÝ™\Ž˜™ËY[Y\˜[ML	Âˆˆ	Ý^\Û]KMÝ™\Ž^\Û]KMÌÝ™\Ž˜™Ë\Û]KLL	ÂˆXBˆ]O^ÙØËœÝ]\ÈOOH	ÜX›\ÚY	ÈÈ	ö*¶+vb6b¶a6a6av,öb6+ö*IÈˆ	öa¶-6,H6)öa6avb6`¶.H6a6a6+6avaöb6,IßBˆ‚ˆÛØ™HÛ\ÜÓ˜[YOHËLËHLËHˆÏ‚ˆØ]Û‚‚ˆËÊˆ\XØ]H
+‹ßBˆ]Û‚ˆÛÛXÚÏ^Ê
+HOˆÛ‘\XØ]QØÝÜŠØËšY
+_BˆÛ\ÜÓ˜[YOHœLKH^\Û]KMÝ™\Ž^\Û]KMÌÝ™\Ž˜™Ë\Û]KLL›Ý[™Y[Y˜[œÚ][Ûˆ‚ˆ]OH¶*¶`ö,v)ö,H6b6)va¶-6)ö(H6a¶,ö+¶*H6av-ö)ö*6`¶*H‚ˆ‚ˆÛÜHÛ\ÜÓ˜[YOHËLËHLËHˆÏ‚ˆØ]Û‚‚ˆËÊˆ[]H
+‹ßBˆ]Û‚ˆÛÛXÚÏ^Ê
+HOˆÙ][]PÛÛ™š\›RY
+ØËšY
+_BˆÛ\ÜÓ˜[YOHœLKH^\Û]KMÝ™\Ž^\›ÜÙKMŒÝ™\Ž˜™Ë\›ÜÙKML›Ý[™Y[Y˜[œÚ][Ûˆ‚ˆ]OH¶+v,6`H6)öa6ava6`H‚ˆ‚ˆ˜\ÚˆÛ\ÜÓ˜[YOHËLËHLËHˆÏ‚ˆØ]Û‚ˆÙ]‚ˆÝ‚ˆÝ‚ˆ
+NÂˆJBˆ
+_BˆÝ›ÙO‚ˆÝX›O‚ˆÙ]‚ˆÙ]‚ˆ
+_B‚ˆËÊˆKKKKKKKKKKKKKKKKHÑPÕSÓˆŽˆSSUPÔÈ	ˆÑSÈPˆKKKKKKKKKKKKKKKKH
+‹ßBˆØXÝ]™S˜]ˆOOH	Ø[˜[]XÜÉÈ	‰ˆ
+ˆ[˜[]XÜÐ[™Ù[ÔÙXÝ[Û‚ˆØÝÜœÏ^ÙØÝÜœßBˆÛ‘Y]ØÝÜ^ÛÛ‘Y]ØÝÜŸBˆÛ”™]šY]ÑØÝÜ^ÛÛ”™]šY]ÑØÝÜŸBˆÏ‚ˆ
+_BˆÛXZ[‚ˆÙ]‚‚ˆËÊˆKKKKKKKKKKKKKKKKHSUHÓÓ‘’T“PUSÓˆSÑSKKKKKKKKKKKKKKKKH
+‹ßBˆÙ[]PÛÛ™š\›RY	‰ˆØÝÜ•Ñ[]H	‰ˆ
+ˆ]ˆÛ\ÜÓ˜[YOH™š^Y[œÙ]L‹ML›^][\ËXÙ[\ˆ\ÝYžKXÙ[\ˆM™Ë\Û]KNLÍ˜XÚÙ›ÜX›\‹^È‚ˆ]ˆÛ\ÜÓ˜[YOH˜™Ë]Ú]H›Ý[™Y^›Ü™\ˆ›Ü™\‹\Û]KLŒX^]Ë\ÛHËY[MHÜXÙK^KMÚYÝË^‚ˆ]ˆÛ\ÜÓ˜[YOH™›^][\ËXÙ[\ˆØ\LÈ^\›ÜÙKMŒ‚ˆ]ˆÛ\ÜÓ˜[YOHËNHNH›Ý[™Y[È™Ë\›ÜÙKML›^][\ËXÙ[\ˆ\ÝYžKXÙ[\ˆÚš[šËL‚ˆ˜\ÚˆÛ\ÜÓ˜[YOHËMHMH^\›ÜÙKMŒˆÏ‚ˆÙ]‚ˆÈÛ\ÜÓ˜[YOH™›ÛX›Û^\ÛH^\Û]KNL¶+v,6`H6ava6`H6)öa6-ö*6b¶*6b6avb6`¶.vaÏÚÏ‚ˆÙ]‚‚ˆÛ\ÜÓ˜[YOH^^È^\Û]KMŒXY[™Ë\™[^Y‚ˆ6aöa6(öa¶*ˆ6av*¶(ö`ö+È6avaˆ6,v.¶*6*¶`È6`vbˆ6+v,6`H6ava6`H6)öa6-ö*6b¶*ÉÈ	ßBˆÝ›Û™ÈÛ\ÜÓ˜[YOH^\Û]KNLžÙØÝÜ•Ñ[]K™[˜[Y_OÜÝ›Û™Ï¶'Âˆ6,öb¶*¶aH6)v,¶)öa6*H6)öa6avb6`¶.H6)öa6+¶)ö-H6*6aÈ6b6a6aˆ6b¶.v+È6av*¶)ö+v)öbÈ6a6a6,¶b6)ö,K‚ˆÜ‚‚ˆ]ˆÛ\ÜÓ˜[YOH™›^][\ËXÙ[\ˆ\ÝYžKY[™Ø\LˆLˆ‚ˆ]Û‚ˆ\OH˜]Ûˆ‚ˆÛÛXÚÏ^Ê
+HOˆÙ][]PÛÛ™š\›RY
+[
+_Bˆ\ØX›Y^Ú\Ñ[][™ßBˆÛ\ÜÓ˜[YOHœLÈKLKH^^È›Û\Ù[ZX›Û^\Û]KMŒÝ™\Ž˜™Ë\Û]KLL›Ý[™Y[È˜[œÚ][Ûˆ‚ˆ‚ˆ6)va6.¶)ö(BˆØ]Û‚ˆ]Û‚ˆ\OH˜]Ûˆ‚ˆÛÛXÚÏ^ØÛÛ™š\›Q[]_Bˆ\ØX›Y^Ú\Ñ[][™ßBˆÛ\ÜÓ˜[YOHœLËHKLKH^^È›Û\Ù[ZX›Û^]Ú]H™Ë\›ÜÙKMŒÝ™\Ž˜™Ë\›ÜÙKMÌ›Ý[™Y[È˜[œÚ][Ûˆ\ØX›Y›ÜXÚ]KML‚ˆ‚ˆÚ\Ñ[][™ÈÈ	ö+6)ö,vcH6)öa6+v,6`K‹‹‰Èˆ	ö*¶(ö`öb¶+È6)öa6+v,6`IßBˆØ]Û‚ˆÙ]‚ˆÙ]‚ˆÙ]‚ˆ
+_B‚ˆËÊˆKKKKKKKKKKKKKKKKH’T‘PTÑHÓÓ“‘PÕSÓˆSÑSKKKKKKKKKKKKKKKKH
+‹ßBˆÜÚÝÑš\™X˜\ÙS[Ù[	‰ˆ
+ˆ]ˆÛ\ÜÓ˜[YOH™š^Y[œÙ]L‹ML›^][\ËXÙ[\ˆ\ÝYžKXÙ[\ˆM™Ë\Û]KNLÍ˜XÚÙ›ÜX›\‹^È‚ˆ]ˆÛ\ÜÓ˜[YOH˜™Ë]Ú]H›Ý[™Y^›Ü™\ˆ›Ü™\‹\Û]KLŒX^]Ë[ÈËY[MˆÜXÙK^KMHÚYÝËLž‚ˆ]ˆÛ\ÜÓ˜[YOH™›^][\ËXÙ[\ˆ\ÝYžKX™]ÙY[ˆ›Ü™\‹Xˆ›Ü™\‹\Û]KLL‹LÈ‚ˆ]ˆÛ\ÜÓ˜[YOH™›^][\ËXÙ[\ˆØ\L‹H‚ˆ]ˆÛ\ÜÓ˜[YOHËNN›Ý[™Y[È™Ë]X[ML^]X[MÌ›^][\ËXÙ[\ˆ\ÝYžKXÙ[\ˆ‚ˆ]X˜\ÙHÛ\ÜÓ˜[YOHËMMˆÏ‚ˆÙ]‚ˆ]‚ˆÈÛ\ÜÓ˜[YOH™›ÛX›Û^\ÛH^\Û]KNL‚ˆ6)v.v+ö)ö+ö)ö*ˆ6`¶)ö.v+ö*H6)öa6*6b¶)öa¶)ö*ˆ6b6)öa6av,¶)öava¶*H6)öa6,ö+v)ö*6b¶*BˆÚÏ‚ˆÛ\ÜÓ˜[YOH^VÌL\H^\Û]KML‚ˆš\™X˜\ÙHÛÝYš\™\ÝÜ™H	ˆØØ[˜XÚÝ\ˆÜ‚ˆÙ]‚ˆÙ]‚‚ˆ]Û‚ˆÛÛXÚÏ^Ê
+HOˆÙ]ÚÝÑš\™X˜\ÙS[Ù[
+˜[ÙJ_BˆÛ\ÜÓ˜[YOHœLH^\Û]KMÝ™\Ž^\Û]KMÌ›Ý[™Y[Y‚ˆ‚ˆÛ\ÜÓ˜[YOHËMMˆÏ‚ˆØ]Û‚ˆÙ]‚‚ˆËÊˆÝ\œ™[Ý]\È˜[›™\ˆ
+‹ßBˆ]‚ˆÛ\ÜÓ˜[YO^ØLÈ›Ý[™Y[È›Ü™\ˆ^^È›^][\Ë\Ý\Ø\L‹H	Âˆ”Ý]\Ëš\ÐÛÝYÛÛ›™XÝYˆÈ	Ø™ËY[Y\˜[MLÍÌ›Ü™\‹Y[Y\˜[LŒ^Y[Y\˜[NL	Âˆˆ	Ø™ËX[X™\‹MLÍÌ›Ü™\‹X[X™\‹LŒ^X[X™\‹NL	ÂˆXBˆ‚ˆ[™›ÈÛ\ÜÓ˜[YOHËMMÚš[šËL]LHˆÏ‚ˆ]ˆÛ\ÜÓ˜[YOHœÜXÙK^KLH‚ˆÛ\ÜÓ˜[YOH™›ÛX›Û‚ˆÙ”Ý]\Ëš\ÐÛÝYÛÛ›™XÝYˆÈ	öav*¶-va6+v)öa6b¶)öbÈ6*6`¶)ö.v+ö*H6*6b¶)öa¶)ö*ˆš\™X˜\ÙHš\™\ÝÜ™H6)öa6,ö+v)ö*6b¶*IÂˆˆ	ö)öa6*6b¶)öa¶)ö*ˆ6*¶cö+v`v.6av+va6b¶)öbÈ6`vbˆ6,6)ö`ö,v*H6)öa6av*¶-v`v+H
+ØØ[[[È[ÙJIßBˆÜ‚ˆÛ\ÜÓ˜[YOH^VÌL\H^\Û]KMŒ‚ˆÙ”Ý]\Ëš\ÐÛÝYÛÛ›™XÝYˆÈ	öb¶*¶aH6+v`v.6(öbˆ6*¶.v+öb¶a6b6av,¶)öava¶*¶aÈ6av,v`ö,¶b¶)öbÈ6.v*6,H6)öa6,ö+v)ö*6*K‰Âˆˆ	öb¶av`öa¶`È6)v+ö+¶)öa6)v.v+ö)ö+ö)ö*ˆ6av-6,vb6.Hš\™X˜\ÙH6)öa6+¶)ö-H6*6`È6a6a6av,¶)öava¶*H6)öa6,ö+v)ö*6b¶*H6)öa6+ö)ö)¶av*K‰ßBˆÜ‚ˆÙ]‚ˆÙ]‚‚ˆËÊˆÛÛ™šYÈ›Ü›H
+‹ßBˆ›Ü›HÛ”ÝX›Z]^Ú[™Qš\™X˜\ÙPÛÛ›™XÝÝX›Z]HÛ\ÜÓ˜[YOHœÜXÙK^KLÈ‚ˆ]ˆÛ\ÜÓ˜[YOH™ÜšYÜšYXÛÛËLˆØ\LÈ^^È‚ˆ]‚ˆX™[Û\ÜÓ˜[YOH˜›ØÚÈ^VÌL\H›Û\Ù[ZX›Û^\Û]KMÌX‹LH‚ˆTHÙ^H
+‚ˆÛX™[‚ˆ[œ]ˆ\OH^‚ˆ˜[YO^Ù˜ÛÛ™šYË˜\RÙ^_BˆÛÚ[™ÙO^ÊJHOˆÙ]˜ÛÛ™šYÊÈ‹‹™˜ÛÛ™šYË\RÙ^NˆK\™Ù]˜[YHJ_BˆXÙZÛ\HR^˜TÞK‹‹ˆ‚ˆÛ\ÜÓ˜[YOHËY[^^ÈL‹HKLKH›Ý[™Y[È›Ü™\ˆ›Ü™\‹\Û]KLÌ›Û[[Û›È‚ˆ™\]Z\™YˆÏ‚ˆÙ]‚‚ˆ]‚ˆX™[Û\ÜÓ˜[YOH˜›ØÚÈ^VÌL\H›Û\Ù[ZX›Û^\Û]KMÌX‹LH‚ˆ›Ú™XÝQ
+‚ˆÛX™[‚ˆ[œ]ˆ\OH^‚ˆ˜[YO^Ù˜ÛÛ™šYËœ›Ú™XÝYBˆÛÚ[™ÙO^ÊJHOˆÙ]˜ÛÛ™šYÊÈ‹‹™˜ÛÛ™šYË›Ú™XÝYˆK\™Ù]˜[YHJ_BˆXÙZÛ\H›^K[YYXØ[X\‚ˆÛ\ÜÓ˜[YOHËY[^^ÈL‹HKLKH›Ý[™Y[È›Ü™\ˆ›Ü™\‹\Û]KLÌ›Û[[Û›È‚ˆ™\]Z\™YˆÏ‚ˆÙ]‚‚ˆ]‚ˆX™[Û\ÜÓ˜[YOH˜›ØÚÈ^VÌL\H›Û\Ù[ZX›Û^\Û]KMÌX‹LH‚ˆ]]ÛXZ[‚ˆÛX™[‚ˆ[œ]ˆ\OH^‚ˆ˜[YO^Ù˜ÛÛ™šYË˜]]ÛXZ[ŸBˆÛÚ[™ÙO^ÊJHOˆÙ]˜ÛÛ™šYÊÈ‹‹™˜ÛÛ™šYË]]ÛXZ[ŽˆK\™Ù]˜[YHJ_BˆXÙZÛ\Hœ›Ú™XÝ™š\™X˜\ÙX\˜ÛÛH‚ˆÛ\ÜÓ˜[YOHËY[^^ÈL‹HKLKH›Ý[™Y[È›Ü™\ˆ›Ü™\‹\Û]KLÌ›Û[[Û›È‚ˆÏ‚ˆÙ]‚‚ˆ]‚ˆX™[Û\ÜÓ˜[YOH˜›ØÚÈ^VÌL\H›Û\Ù[ZX›Û^\Û]KMÌX‹LH‚ˆ\QˆÛX™[‚ˆ[œ]ˆ\OH^‚ˆ˜[YO^Ù˜ÛÛ™šYË˜\YBˆÛÚ[™ÙO^ÊJHOˆÙ]˜ÛÛ™šYÊÈ‹‹™˜ÛÛ™šYË\YˆK\™Ù]˜[YHJ_BˆXÙZÛ\HŒNŒLŒÍMŽÙXŽ˜X˜Ù‚ˆÛ\ÜÓ˜[YOHËY[^^ÈL‹HKLKH›Ý[™Y[È›Ü™\ˆ›Ü™\‹\Û]KLÌ›Û[[Û›È‚ˆÏ‚ˆÙ]‚ˆÙ]‚‚ˆÙ˜”™\Ý[\ÙÈ	‰ˆ
+ˆ]‚ˆÛ\ÜÓ˜[YO^ØL‹H›Ý[™Y[È^^È›Û[YY][H	Âˆ˜”™\Ý[\ÙËœÝXØÙ\ÜÂˆÈ	Ø™ËY[Y\˜[ML^Y[Y\˜[N›Ü™\ˆ›Ü™\‹Y[Y\˜[LŒ	Âˆˆ	Ø™Ë\›ÜÙKML^\›ÜÙKN›Ü™\ˆ›Ü™\‹\›ÜÙKLŒ	ÂˆXBˆ‚ˆÙ˜”™\Ý[\ÙË›Y\ÜØYÙ_BˆÙ]‚ˆ
+_B‚ˆ]ˆÛ\ÜÓ˜[YOH™›^][\ËXÙ[\ˆ\ÝYžKX™]ÙY[ˆLˆ›Ü™\‹]›Ü™\‹\Û]KLL‚ˆÙ”Ý]\Ëš\ÐÛÝYÛÛ›™XÝYÈ
+ˆ]Û‚ˆ\OH˜]Ûˆ‚ˆÛÛXÚÏ^ÛÛ‘\ØÛÛ›™XÝš\™X˜\Ù_BˆÛ\ÜÓ˜[YOH^^È^\›ÜÙKMŒÝ™\Ž[™\›[™H›Û\Ù[ZX›Û‚ˆ‚ˆ6`¶-ö.H6)öa6)ö*¶-v)öa6b6)öa6.vb6+ö*H6a6a6*¶+¶,¶b¶aˆ6)öa6av+va6b‚ˆØ]Û‚ˆ
+Hˆ
+ˆÜ[ˆÛ\ÜÓ˜[YOH^^È^\Û]KML¶*6b¶)öa¶)ö*ˆ6)öa6(ö-ö*6)ö(H6av+v`vb6.6*H6`vbˆš\™X˜\ÙOÜÜ[‚ˆ
+_B‚ˆ]ˆÛ\ÜÓ˜[YOH™›^][\ËXÙ[\ˆØ\Lˆ‚ˆ]Û‚ˆ\OH˜]Ûˆ‚ˆÛÛXÚÏ^Ê
+HOˆÙ]ÚÝÑš\™X˜\ÙS[Ù[
+˜[ÙJ_BˆÛ\ÜÓ˜[YOHœLÈKLKH^^È^\Û]KMŒÝ™\Ž˜™Ë\Û]KLL›Ý[™Y[È˜[œÚ][Ûˆ‚ˆ‚ˆ6)v.¶a6)ö`‚ˆØ]Û‚ˆ]Û‚ˆ\OHœÝX›Z]‚ˆ\ØX›Y^Ù˜ÛÛ›™XÝ[™ßBˆÛ\ÜÓ˜[YOHœMKLKH^^È›Û\Ù[ZX›Û^]Ú]H™Ë]X[MŒÝ™\Ž˜™Ë]X[MÌ›Ý[™Y[È˜[œÚ][Ûˆ\ØX›Y›ÜXÚ]KML‚ˆ‚ˆÙ˜ÛÛ›™XÝ[™ÈÈ	ö+6)ö,vcH6)öa6)ö*¶-v)öa‹‹‰Èˆ	ö+v`v.6b6)ö+¶*¶*6)ö,H6)öa6)ö*¶-v)öa	ßBˆØ]Û‚ˆÙ]‚ˆÙ]‚ˆÙ›Ü›O‚ˆÙ]‚ˆÙ]‚ˆ
+_BˆÙ]‚ˆ
+NÂŸNÂ

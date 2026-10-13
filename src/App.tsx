@@ -25,6 +25,7 @@ import {
   AdminUser,
 } from './services/storage';
 import type { EditorTab } from './components/editor/DoctorEditor';
+import { appPath, doctorPublicPath, doctorPublicUrl } from './services/urls';
 
 const Dashboard = lazy(() => import('./components/dashboard/Dashboard').then((module) => ({ default: module.Dashboard })));
 const DoctorEditor = lazy(() => import('./components/editor/DoctorEditor').then((module) => ({ default: module.DoctorEditor })));
@@ -60,7 +61,11 @@ function RouteLoading() {
  */
 function extractPublicSlugFromUrl(): string | null {
   if (typeof window === 'undefined') return null;
-  const path = window.location.pathname;
+  const basePath = import.meta.env.BASE_URL || '/';
+  const browserPath = window.location.pathname;
+  const path = basePath !== '/' && browserPath.startsWith(basePath)
+    ? `/${browserPath.slice(basePath.length)}`
+    : browserPath;
   const hash = window.location.hash;
   const search = window.location.search;
 
@@ -239,14 +244,14 @@ export default function App() {
 
   // Navigate to public doctor URL
   const navigateToDoctorPublic = (slug: string) => {
-    const newUrl = `/doctors/${slug}`;
+    const newUrl = doctorPublicPath(slug);
     window.history.pushState({}, '', newUrl);
     resolveRouteFromUrl();
   };
 
   // Navigate to Dashboard
   const navigateToDashboard = () => {
-    window.history.pushState({}, '', '/');
+    window.history.pushState({}, '', appPath('/'));
     setCurrentView('dashboard');
     setSelectedDoctor(null);
     setPublicError(null);
@@ -527,7 +532,7 @@ export default function App() {
               </h2>
 
               <p className="text-xs text-slate-400 font-mono dir-ltr truncate max-w-full px-4">
-                {window.location.origin}/doctors/{publicError.slug}
+                {doctorPublicUrl(publicError.slug)}
               </p>
             </div>
 

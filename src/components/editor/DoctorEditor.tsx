@@ -1,1090 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import {
-  DoctorProfile,
-  DoctorStatus,
-  Qualification,
-  MedicalService,
-  EducationalArticle,
-  FAQItem,
-} from '../../types/doctor';
-import { DoctorWebsite } from '../public/DoctorWebsite';
-import {
-  Save,
-  Globe,
-  ArrowRight,
-  Eye,
-  Smartphone,
-  Tablet,
-  Monitor,
-  Plus,
-  Trash2,
-  CheckCircle2,
-  Upload,
-  Palette,
-  FileText,
-  MapPin,
-  Clock,
-  Sparkles,
-  Search,
-  ExternalLink,
-  Check,
-  Stethoscope,
-  Award,
-  BookOpen,
-  HelpCircle,
-  Settings,
-  AlertCircle,
-  Share2,
-} from 'lucide-react';
-import { DOCTOR_THEMES, getThemeById } from '../../data/themes';
-
-export type EditorTab =
-  | 'basic'
-  | 'clinic'
-  | 'qualifications'
-  | 'services'
-  | 'content'
-  | 'branding'
-  | 'seo';
-
-type ViewportDevice = 'desktop' | 'tablet' | 'mobile';
-
-interface DoctorEditorProps {
-  initialDoctor: DoctorProfile;
-  initialTab?: EditorTab;
-  onSave: (doctor: DoctorProfile) => Promise<void>;
-  onCancel: () => void;
-  onPreviewPublic: (doctor: DoctorProfile) => void;
-  allDoctors: DoctorProfile[];
-}
-
-const PRESET_PRIMARY_COLORS = [
-  { label: 'ÙƒØ­Ù„ÙŠ Ø§Ø³ØªØ´Ø§Ø±ÙŠ (Navy)', value: '#0F2A4A' },
-  { label: 'Ø£Ø²Ø±Ù‚ ÙƒÙ„Ø§Ø³ÙŠÙƒÙŠ', value: '#1E3A8A' },
-  { label: 'Ø£Ø®Ø¶Ø± Ø¬Ø±Ø§Ø­ÙŠ (Emerald)', value: '#064E3B' },
-  { label: 'Ø¹Ù†Ø§Ø¨ÙŠ ÙˆÙ‚Ø§Ø¦ÙŠ (Burgundy)', value: '#881337' },
-  { label: 'Ø±Ù…Ø§Ø¯ÙŠ ÙØ­Ù…ÙŠ Ø¹ØµØ±ÙŠ', value: '#1E293B' },
-];
-
-const PRESET_ACCENT_COLORS = [
-  { label: 'ØªÙŠÙ„ Ø·Ø¨ÙŠ (Teal)', value: '#0D9488' },
-  { label: 'Ø£Ø²Ø±Ù‚ Ø³Ù…Ø§ÙˆÙŠ (Sky Blue)', value: '#0284C7' },
-  { label: 'Ø²Ù…Ø±Ø¯ÙŠ Ù…Ø´Ø±Ù‚', value: '#059669' },
-  { label: 'ÙŠØ§Ù‚ÙˆØªÙŠ (Rose)', value: '#E11D48' },
-  { label: 'ÙƒÙ‡Ø±Ù…Ø§Ù†ÙŠ Ø¯Ø§ÙØ¦ (Amber)', value: '#D97706' },
-];
-
-export const DoctorEditor: React.FC<DoctorEditorProps> = ({
-  initialDoctor,
-  initialTab = 'basic',
-  onSave,
-  onCancel,
-  onPreviewPublic,
-  allDoctors,
-}) => {
-  const [doctor, setDoctor] = useState<DoctorProfile>(() =>
-    JSON.parse(JSON.stringify(initialDoctor))
-  );
-  const [activeTab, setActiveTab] = useState<EditorTab>(initialTab);
-  const [previewDevice, setPreviewDevice] = useState<ViewportDevice>('desktop');
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
-  const [slugError, setSlugError] = useState<string | null>(null);
-  const [showLivePreviewSplit, setShowLivePreviewSplit] = useState(true);
-
-  // Validate slug uniqueness against other doctors
-  useEffect(() => {
-    const slug = (doctor.slug || '').trim().toLowerCase();
-    if (!slug) {
-      setSlugError('Ø§Ù„Ø±Ø§Ø¨Ø· Ø§Ù„Ù…Ø®ØµØµ Ù…Ø·Ù„ÙˆØ¨');
-      return;
-    }
-    const slugRegex = /^[a-z0-9-]+$/;
-    if (!slugRegex.test(slug)) {
-      setSlugError('ÙŠØ¬Ø¨ Ø£Ù† ÙŠØ­ØªÙˆÙŠ Ø§Ù„Ø±Ø§Ø¨Ø· Ø¹Ù„Ù‰ Ø­Ø±ÙˆÙ Ø¥Ù†Ø¬Ù„ÙŠØ²ÙŠØ© ØµØºÙŠØ±Ø©ØŒ Ø£Ø±Ù‚Ø§Ù…ØŒ ÙˆØ´Ø±Ø·Ø§Øª (-) ÙÙ‚Ø·');
-      return;
-    }
-    const duplicate = allDoctors.find(
-      (d) => d.id !== doctor.id && d.slug.toLowerCase() === slug
-    );
-    if (duplicate) {
-      setSlugError(`Ø§Ù„Ø±Ø§Ø¨Ø· "${slug}" Ù…Ø³ØªØ®Ø¯Ù… Ø¨Ø§Ù„ÙØ¹Ù„ Ù„Ø·Ø¨ÙŠØ¨ Ø¢Ø®Ø± (${duplicate.fullName})`);
-      return;
-    }
-    setSlugError(null);
-  }, [doctor.slug, doctor.id, allDoctors]);
-
-  const handleSave = async (targetStatus?: DoctorStatus) => {
-    if (slugError) {
-      alert(`ÙŠØ±Ø¬Ù‰ ØªØµØ­ÙŠØ­ Ø§Ù„Ø±Ø§Ø¨Ø· Ø§Ù„Ù…Ø®ØµØµ: ${slugError}`);
-      return;
-    }
-    if (!doctor.fullName.trim()) {
-      alert('ÙŠØ±Ø¬Ù‰ Ø¥Ø¯Ø®Ø§Ù„ Ø§Ø³Ù… Ø§Ù„Ø·Ø¨ÙŠØ¨ ÙƒØ§Ù…Ù„Ø§Ù‹.');
-      return;
-    }
-
-    try {
-      setIsSaving(true);
-      const toSave = {
-        ...doctor,
-        status: targetStatus || doctor.status,
-        updatedAt: new Date().toISOString(),
-      };
-      await onSave(toSave);
-      setDoctor(toSave);
-      setSaveSuccessMsg('ØªÙ… Ø­ÙØ¸ Ø§Ù„ØªØ¹Ø¯ÙŠÙ„Ø§Øª Ø¨Ù†Ø¬Ø§Ø­!');
-      setTimeout(() => setSaveSuccessMsg(null), 3000);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // Upload doctor photo from device
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      alert('ÙŠØ±Ø¬Ù‰ Ø§Ø®ØªÙŠØ§Ø± Ù…Ù„Ù ØµÙˆØ±Ø© ØµØ§Ù„Ø­ (JPG, PNG, WebP).');
-      return;
-    }
-
-    if (file.size > 8 * 1024 * 1024) {
-      alert('Ø­Ø¬Ù… Ø§Ù„ØµÙˆØ±Ø© ÙƒØ¨ÙŠØ± Ø¬Ø¯Ø§Ù‹ØŒ ÙŠØ±Ø¬Ù‰ Ø§Ø®ØªÙŠØ§Ø± ØµÙˆØ±Ø© Ø£Ù‚Ù„ Ù…Ù† 8 Ù…ÙŠØ¬Ø§Ø¨Ø§ÙŠØª.');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setDoctor((prev) => ({ ...prev, photoUrl: reader.result as string }));
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Qualifications Handlers
-  const addQualification = () => {
-    const newQ: Qualification = {
-      id: 'q-' + Date.now(),
-      degree: '',
-      institution: '',
-      year: new Date().getFullYear().toString(),
-      verified: true,
-    };
-    setDoctor((prev) => ({
-      ...prev,
-      qualifications: [...(prev.qualifications || []), newQ],
-    }));
-  };
-
-  const removeQualification = (id: string) => {
-    setDoctor((prev) => ({
-      ...prev,
-      qualifications: prev.qualifications.filter((q) => q.id !== id),
-    }));
-  };
-
-  const updateQualification = (id: string, patch: Partial<Qualification>) => {
-    setDoctor((prev) => ({
-      ...prev,
-      qualifications: prev.qualifications.map((q) => (q.id === id ? { ...q, ...patch } : q)),
-    }));
-  };
-
-  // Services Handlers
-  const addService = () => {
-    const newService: MedicalService = {
-      id: 's-' + Date.now(),
-      name: '',
-      description: '',
-      tag: 'Ø§Ø³ØªØ´Ø§Ø±Ø©',
-      fee: '',
-    };
-    setDoctor((prev) => ({
-      ...prev,
-      services: [...(prev.services || []), newService],
-    }));
-  };
-
-  const removeService = (id: string) => {
-    setDoctor((prev) => ({
-      ...prev,
-      services: prev.services.filter((s) => s.id !== id),
-    }));
-  };
-
-  const updateService = (id: string, patch: Partial<MedicalService>) => {
-    setDoctor((prev) => ({
-      ...prev,
-      services: prev.services.map((s) => (s.id === id ? { ...s, ...patch } : s)),
-    }));
-  };
-
-  // Articles Handlers
-  const addArticle = () => {
-    const newArt: EducationalArticle = {
-      id: 'art-' + Date.now(),
-      title: '',
-      summary: '',
-      content: '',
-      readingTime: '3 Ø¯Ù‚Ø§Ø¦Ù‚ Ù‚Ø±Ø§Ø¡Ø©',
-      date: new Date().toISOString().slice(0, 10),
-      tag: 'Ù†ØµØ§Ø¦Ø­ Ø·Ø¨ÙŠØ©',
-    };
-    setDoctor((prev) => ({
-      ...prev,
-      articles: [...(prev.articles || []), newArt],
-    }));
-  };
-
-  const removeArticle = (id: string) => {
-    setDoctor((prev) => ({
-      ...prev,
-      articles: prev.articles.filter((a) => a.id !== id),
-    }));
-  };
-
-  const updateArticle = (id: string, patch: Partial<EducationalArticle>) => {
-    setDoctor((prev) => ({
-      ...prev,
-      articles: prev.articles.map((a) => (a.id === id ? { ...a, ...patch } : a)),
-    }));
-  };
-
-  // FAQs Handlers
-  const addFaq = () => {
-    const newFaq: FAQItem = {
-      id: 'faq-' + Date.now(),
-      question: '',
-      answer: '',
-      category: 'Ø¹Ø§Ù…',
-    };
-    setDoctor((prev) => ({
-      ...prev,
-      faqs: [...(prev.faqs || []), newFaq],
-    }));
-  };
-
-  const removeFaq = (id: string) => {
-    setDoctor((prev) => ({
-      ...prev,
-      faqs: prev.faqs.filter((f) => f.id !== id),
-    }));
-  };
-
-  const updateFaq = (id: string, patch: Partial<FAQItem>) => {
-    setDoctor((prev) => ({
-      ...prev,
-      faqs: prev.faqs.map((f) => (f.id === id ? { ...f, ...patch } : f)),
-    }));
-  };
-
-  return (
-    <div dir="rtl" className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans antialiased">
-      {/* ----------------- TOP STICKY TOOLBAR ----------------- */}
-      <header className="h-14 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-2xs">
-        {/* Right side (RTL): Back & Doctor Title */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onCancel}
-            className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
-            title="Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ…"
-          >
-            <ArrowRight className="w-4 h-4" />
-          </button>
-
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-sm text-slate-900 truncate max-w-[200px] sm:max-w-xs">
-              {doctor.fullName || 'Ø·Ø¨ÙŠØ¨ Ø¬Ø¯ÙŠØ¯'}
-            </span>
-            <span className="text-slate-300">/</span>
-            {/* Status Select */}
-            <select
-              value={doctor.status}
-              onChange={(e) =>
-                setDoctor((prev) => ({ ...prev, status: e.target.value as DoctorStatus }))
-              }
-              className="text-xs bg-slate-100 hover:bg-slate-200/80 font-medium text-slate-700 py-1 px-2.5 rounded-md border-0 cursor-pointer focus:ring-1 focus:ring-teal-500"
-            >
-              <option value="draft">Ù…Ø³ÙˆØ¯Ø© Ù‚ÙŠØ¯ Ø§Ù„ØªØ¬Ù‡ÙŠØ²</option>
-              <option value="pending">Ù‚ÙŠØ¯ Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø© ÙˆØ§Ù„Ø§Ø¹ØªÙ…Ø§Ø¯</option>
-              <option value="published">Ù…Ù†Ø´ÙˆØ± Ù„Ù„Ø¬Ù…Ù‡ÙˆØ± (Live)</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Center: Device Viewport Switcher */}
-        <div className="hidden md:flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
-          <button
-            onClick={() => setPreviewDevice('desktop')}
-            className={`px-2.5 py-1 rounded text-xs font-medium transition flex items-center gap-1.5 ${
-              previewDevice === 'desktop'
-                ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Monitor className="w-3.5 h-3.5" />
-            <span>Ø³Ø·Ø­ Ø§Ù„Ù…ÙƒØªØ¨</span>
-          </button>
-          <button
-            onClick={() => setPreviewDevice('tablet')}
-            className={`px-2.5 py-1 rounded text-xs font-medium transition flex items-center gap-1.5 ${
-              previewDevice === 'tablet'
-                ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Tablet className="w-3.5 h-3.5" />
-            <span>ØªØ§Ø¨Ù„Øª</span>
-          </button>
-          <button
-            onClick={() => setPreviewDevice('mobile')}
-            className={`px-2.5 py-1 rounded text-xs font-medium transition flex items-center gap-1.5 ${
-              previewDevice === 'mobile'
-                ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>Ù…ÙˆØ¨Ø§ÙŠÙ„</span>
-          </button>
-        </div>
-
-        {/* Left side: Save & Preview Buttons */}
-        <div className="flex items-center gap-2">
-          {saveSuccessMsg && (
-            <span className="text-xs text-emerald-700 font-medium hidden sm:inline">
-              {saveSuccessMsg}
-            </span>
-          )}
-
-          <a
-            href={`/doctors/${doctor.slug}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-medium transition"
-            title="ÙØªØ­ Ù…ÙˆÙ‚Ø¹ Ø§Ù„Ø·Ø¨ÙŠØ¨ ÙÙŠ Ø¹Ù„Ø§Ù…Ø© ØªØ¨ÙˆÙŠØ¨ Ø¬Ø¯ÙŠØ¯Ø©"
-          >
-            <ExternalLink className="w-3.5 h-3.5 text-teal-600" />
-            <span>Ø²ÙŠØ§Ø±Ø© Ø§Ù„Ù…ÙˆÙ‚Ø¹</span>
-          </a>
-
-          <button
-            onClick={() => onPreviewPublic(doctor)}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-medium transition"
-          >
-            <Eye className="w-3.5 h-3.5 text-slate-500" />
-            <span>Ù…Ø¹Ø§ÙŠÙ†Ø© ÙƒØ²Ø§Ø¦Ø±</span>
-          </button>
-
-          <button
-            onClick={() => handleSave('draft')}
-            disabled={isSaving}
-            className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium transition disabled:opacity-50"
-          >
-            Ø­ÙØ¸ Ù…Ø³ÙˆØ¯Ø©
-          </button>
-
-          <button
-            onClick={() => handleSave(doctor.status === 'published' ? 'published' : 'published')}
-            disabled={isSaving}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold transition disabled:opacity-50 shadow-xs"
-          >
-            <Globe className="w-3.5 h-3.5" />
-            <span>{isSaving ? 'Ø¬Ø§Ø±Ù Ø§Ù„Ø­ÙØ¸...' : 'Ø­ÙØ¸ ÙˆÙ†Ø´Ø±'}</span>
-          </button>
-        </div>
-      </header>
-
-      {/* ----------------- DUAL PANE EDITOR WORKSPACE ----------------- */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Right Pane (Form Controls) */}
-        <div className="w-full lg:w-[540px] xl:w-[600px] border-l border-slate-200 bg-white flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden shrink-0">
-          {/* Tabs Navigation Bar */}
-          <div className="flex items-center gap-1 px-4 py-2 border-b border-slate-200 bg-slate-50/70 overflow-x-auto text-xs shrink-0">
-            <button
-              onClick={() => setActiveTab('basic')}
-              className={`px-3 py-1.5 rounded-md whitespace-nowrap transition font-medium ${
-                activeTab === 'basic'
-                  ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ©
-            </button>
-            <button
-              onClick={() => setActiveTab('clinic')}
-              className={`px-3 py-1.5 rounded-md whitespace-nowrap transition font-medium ${
-                activeTab === 'clinic'
-                  ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Ø§Ù„Ø¹ÙŠØ§Ø¯Ø© ÙˆØ§Ù„ØªÙˆØ§ØµÙ„
-            </button>
-            <button
-              onClick={() => setActiveTab('qualifications')}
-              className={`px-3 py-1.5 rounded-md whitespace-nowrap transition font-medium ${
-                activeTab === 'qualifications'
-                  ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Ø§Ù„Ù…Ø¤Ù‡Ù„Ø§Øª ({doctor.qualifications?.length || 0})
-            </button>
-            <button
-              onClick={() => setActiveTab('services')}
-              className={`px-3 py-1.5 rounded-md whitespace-nowrap transition font-medium ${
-                activeTab === 'services'
-                  ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Ø§Ù„Ø®Ø¯Ù…Ø§Øª ({doctor.services?.length || 0})
-            </button>
-            <button
-              onClick={() => setActiveTab('content')}
-              className={`px-3 py-1.5 rounded-md whitespace-nowrap transition font-medium ${
-                activeTab === 'content'
-                  ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Ø§Ù„Ù…Ù‚Ø§Ù„Ø§Øª ÙˆØ§Ù„Ø£Ø³Ø¦Ù„Ø©
-            </button>
-            <button
-              onClick={() => setActiveTab('branding')}
-              className={`px-3 py-1.5 rounded-md whitespace-nowrap transition font-medium ${
-                activeTab === 'branding'
-                  ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Ø§Ù„Ø«ÙŠÙ… ÙˆØ§Ù„Ø£Ù„ÙˆØ§Ù†
-            </button>
-            <button
-              onClick={() => setActiveTab('seo')}
-              className={`px-3 py-1.5 rounded-md whitespace-nowrap transition font-medium ${
-                activeTab === 'seo'
-                  ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª SEO
-            </button>
-          </div>
-
-          {/* Form Tab Body (Scrollable) */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-5">
-            {/* TAB 1: BASIC INFORMATION */}
-            {activeTab === 'basic' && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-3.5 text-xs">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Ø§Ù„Ø§Ø³Ù… Ø§Ù„ÙƒØ§Ù…Ù„ Ù„Ù„Ø·Ø¨ÙŠØ¨ (Ø¨Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©) *
-                      </label>
-                      <input
-                        type="text"
-                        value={doctor.fullName}
-                        onChange={(e) => setDoctor({ ...doctor, fullName: e.target.value })}
-                        placeholder="Ø¯. Ø£Ø­Ù…Ø¯ Ù…Ø­Ù…ÙˆØ¯ Ø§Ù„Ø´Ù†Ø§ÙˆÙŠ"
-                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:border-teal-500 font-semibold"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Full Name (English)
-                      </label>
-                      <input
-                        type="text"
-                        value={doctor.fullNameEn || ''}
-                        onChange={(e) => setDoctor({ ...doctor, fullNameEn: e.target.value })}
-                        placeholder="Dr. Ahmed Mahmoud El-Shinawy"
-                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 font-medium dir-ltr text-left"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Ø§Ù„Ø±Ø§Ø¨Ø· Ø§Ù„Ù…Ø®ØµØµ Ù„Ù„Ù…ÙˆÙ‚Ø¹ (Slug) *
-                    </label>
-                    <div className="flex items-center gap-1 dir-ltr text-left">
-                      <span className="text-slate-400 font-mono text-xs">/doctors/</span>
-                      <input
-                        type="text"
-                        value={doctor.slug}
-                        onChange={(e) =>
-                          setDoctor({ ...doctor, slug: e.target.value.toLowerCase().trim() })
-                        }
-                        placeholder="dr-ahmed"
-                        className={`flex-1 text-xs px-2.5 py-1.5 rounded-lg border font-mono ${
-                          slugError ? 'border-rose-300 bg-rose-50/50' : 'border-slate-300'
-                        }`}
-                      />
-                    </div>
-                    {slugError ? (
-                      <p className="text-[11px] text-rose-600 mt-1">{slugError}</p>
-                    ) : doctor.slug ? (
-                      <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-500 bg-slate-100/80 px-2.5 py-1.5 rounded-lg border border-slate-200">
-                        <span className="font-mono dir-ltr truncate text-slate-700">
-                          {window.location.origin}/doctors/{doctor.slug}
-                        </span>
-                        <a
-                          href={`/doctors/${doctor.slug}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-teal-700 hover:text-teal-900 font-semibold inline-flex items-center gap-1 shrink-0 mr-2"
-                        >
-                          <span>ÙØªØ­ Ø§Ù„Ù…ÙˆÙ‚Ø¹</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Ø§Ù„ØªØ®ØµØµ Ø§Ù„Ø·Ø¨ÙŠ Ø§Ù„Ø¯Ù‚ÙŠÙ‚ (Ø¨Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©) *
-                      </label>
-                      <input
-                        type="text"
-                        value={doctor.specialty}
-                        onChange={(e) => setDoctor({ ...doctor, specialty: e.target.value })}
-                        placeholder="Ø§Ø³ØªØ´Ø§Ø±ÙŠ Ø¬Ø±Ø§Ø­Ø© Ø§Ù„Ù‚Ù„Ø¨ ÙˆØ§Ù„Ø£ÙˆØ¹ÙŠØ© Ø§Ù„Ø¯Ù…ÙˆÙŠØ©"
-                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Specialty (English)
-                      </label>
-                      <input
-                        type="text"
-                        value={doctor.specialtyEn || ''}
-                        onChange={(e) => setDoctor({ ...doctor, specialtyEn: e.target.value })}
-                        placeholder="Consultant Cardiovascular Surgeon"
-                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 dir-ltr text-left"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Ø§Ù„Ù„Ù‚Ø¨ Ø§Ù„Ù…Ù‡Ù†ÙŠ ÙˆØ§Ù„Ø£ÙƒØ§Ø¯ÙŠÙ…ÙŠ (Ø¨Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©)
-                      </label>
-                      <input
-                        type="text"
-                        value={doctor.title}
-                        onChange={(e) => setDoctor({ ...doctor, title: e.target.value })}
-                        placeholder="Ø£Ø³ØªØ§Ø° Ø¨ÙƒÙ„ÙŠØ© Ø§Ù„Ø·Ø¨ - Ø²Ù…ÙŠÙ„ Ø§Ù„ÙƒÙ„ÙŠØ© Ø§Ù„Ù…Ù„ÙƒÙŠØ© Ù„Ù„Ø¬Ø±Ø§Ø­ÙŠÙ†"
-                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Academic Title (English)
-                      </label>
-                      <input
-                        type="text"
-                        value={doctor.titleEn || ''}
-                        onChange={(e) => setDoctor({ ...doctor, titleEn: e.target.value })}
-                        placeholder="Professor of Surgery - Fellow of RCS"
-                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 dir-ltr text-left"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Ø³Ù†ÙˆØ§Øª Ø§Ù„Ø®Ø¨Ø±Ø© Ø§Ù„Ø³Ø±ÙŠØ±ÙŠØ©
-                    </label>
-                    <input
-                      type="number"
-                      value={doctor.yearsOfExperience || ''}
-                      onChange={(e) =>
-                        setDoctor({
-                          ...doctor,
-                          yearsOfExperience: e.target.value ? parseInt(e.target.value) : undefined,
-                        })
-                      }
-                      placeholder="15"
-                      className="w-32 text-xs px-3 py-2 rounded-lg border border-slate-300 font-mono tabular-nums"
-                    />
-                  </div>
-
-                  {/* Doctor Profile Photo with Device Upload */}
-                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/90 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-semibold text-slate-800 flex items-center gap-1.5">
-                        <Upload className="w-3.5 h-3.5 text-teal-600" />
-                        <span>Ø§Ù„ØµÙˆØ±Ø© Ø§Ù„Ø´Ø®ØµÙŠØ© Ù„Ù„Ø·Ø¨ÙŠØ¨ (Profile Photo)</span>
-                      </label>
-                      {doctor.photoUrl && (
-                        <button
-                          type="button"
-                          onClick={() => setDoctor({ ...doctor, photoUrl: '' })}
-                          className="text-[10px] text-rose-600 hover:text-rose-700 flex items-center gap-1 font-medium transition"
-                          title="Ø­Ø°Ù Ø§Ù„ØµÙˆØ±Ø© Ø§Ù„Ø´Ø®ØµÙŠØ©"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          <span>Ø¥Ø²Ø§Ù„Ø© Ø§Ù„ØµÙˆØ±Ø©</span>
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3.5">
-                      {/* Avatar Preview */}
-                      <div className="relative w-20 h-20 rounded-xl overflow-hidden border-2 border-slate-200 bg-white shadow-2xs shrink-0 flex items-center justify-center">
-                        {doctor.photoUrl ? (
-                          <img
-                            src={doctor.photoUrl}
-                            alt={doctor.fullName || 'ØµÙˆØ±Ø© Ø§Ù„Ø·Ø¨ÙŠØ¨'}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <div className="w-full h-full bg-slate-100 flex flex-col items-center justify-center text-slate-400 p-2 text-center">
-                            <Stethoscope className="w-6 h-6 text-slate-400 mb-0.5" />
-                            <span className="text-[9px]">Ø¨Ø¯ÙˆÙ† ØµÙˆØ±Ø©</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Upload from Device button */}
-                      <div className="flex-1 space-y-1.5">
-                        <label className="cursor-pointer inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs transition">
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>Ø±ÙØ¹ ØµÙˆØ±Ø© Ø´Ø®ØµÙŠØ© Ù…Ù† Ø¬Ù‡Ø§Ø²Ùƒ</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handlePhotoUpload}
-                            className="hidden"
-                          />
-                        </label>
-                        <p className="text-[10px] text-slate-500">
-                          ÙŠØ¯Ø¹Ù… Ù…Ù„ÙØ§Øª JPG Ùˆ PNG Ùˆ WebP. Ø³ÙŠØªÙ… ØªØ­Ø¯ÙŠØ« ÙˆØªØ·Ø¨ÙŠÙ‚ Ø§Ù„ØµÙˆØ±Ø© ÙÙŠ Ø§Ù„Ù…ÙˆÙ‚Ø¹ ÙÙˆØ±Ø§Ù‹.
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Direct URL input fallback */}
-                    <div className="pt-2 border-t border-slate-200/70">
-                      <span className="block text-[10px] text-slate-500 mb-1">Ø£Ùˆ Ø£Ø¯Ø®Ù„ Ø±Ø§Ø¨Ø· Ø§Ù„ØµÙˆØ±Ø© Ø§Ù„Ù…Ø¨Ø§Ø´Ø± (Image URL):</span>
-                      <input
-                        type="text"
-                        value={doctor.photoUrl || ''}
-                        onChange={(e) => setDoctor({ ...doctor, photoUrl: e.target.value })}
-                        placeholder="https://images.unsplash.com/..."
-                        className="w-full text-xs px-3 py-1.5 rounded-lg border border-slate-300 font-mono dir-ltr text-left bg-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Ø§Ù„Ù†Ø¨Ø°Ø© Ø§Ù„Ù…Ù‡Ù†ÙŠØ© ÙˆØ³ÙŠØ±Ø© Ø§Ù„Ø·Ø¨ÙŠØ¨ (Ø¨Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©)
-                      </label>
-                      <textarea
-                        rows={4}
-                        value={doctor.bio}
-                        onChange={(e) => setDoctor({ ...doctor, bio: e.target.value })}
-                        placeholder="Ø·Ø¨ÙŠØ¨ ÙˆØ¬Ø±Ø§Ø­ Ù…ØªØ®ØµØµ ÙÙŠ..."
-                        className="w-full text-xs p-3 rounded-lg border border-slate-300 leading-relaxed"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Professional Biography (English)
-                      </label>
-                      <textarea
-                        rows={4}
-                        value={doctor.bioEn || ''}
-                        onChange={(e) => setDoctor({ ...doctor, bioEn: e.target.value })}
-                        placeholder="Consultant and specialist dedicated to providing advanced medical care..."
-                        className="w-full text-xs p-3 rounded-lg border border-slate-300 leading-relaxed dir-ltr text-left"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 2: CLINIC & CONTACT */}
-            {activeTab === 'clinic' && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-3.5 text-xs">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Ø§Ø³Ù… Ø§Ù„Ø¹ÙŠØ§Ø¯Ø© Ø£Ùˆ Ø§Ù„Ù…Ø±ÙƒØ² Ø§Ù„Ø·Ø¨ÙŠ
-                    </label>
-                    <input
-                      type="text"
-                      value={doctor.clinic.name}
-                      onChange={(e) =>
-                        setDoctor({
-                          ...doctor,
-                          clinic: { ...doctor.clinic, name: e.target.value },
-                        })
-                      }
-                      placeholder="Ø¹ÙŠØ§Ø¯Ø© Ø§Ù„Ù†Ø®Ø¨Ø© Ù„Ù„Ù‚Ù„Ø¨"
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 font-medium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Ø§Ù„Ø¹Ù†ÙˆØ§Ù† Ø§Ù„ØªÙØµÙŠÙ„ÙŠ
-                    </label>
-                    <input
-                      type="text"
-                      value={doctor.clinic.address}
-                      onChange={(e) =>
-                        setDoctor({
-                          ...doctor,
-                          clinic: { ...doctor.clinic, address: e.target.value },
-                        })
-                      }
-                      placeholder="15 Ø´Ø§Ø±Ø¹ Ø¬Ø§Ù…Ø¹Ø© Ø§Ù„Ø¯ÙˆÙ„ Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©ØŒ Ø§Ù„Ù…Ù‡Ù†Ø¯Ø³ÙŠÙ†"
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Ø§Ù„Ù…Ø¯ÙŠÙ†Ø© / Ø§Ù„Ù…Ø­Ø§ÙØ¸Ø©
-                      </label>
-                      <input
-                        type="text"
-                        value={doctor.clinic.city}
-                        onChange={(e) =>
-                          setDoctor({
-                            ...doctor,
-                            clinic: { ...doctor.clinic, city: e.target.value },
-                          })
-                        }
-                        placeholder="Ø§Ù„Ø¬ÙŠØ²Ø© / Ø§Ù„Ù‚Ø§Ù‡Ø±Ø©"
-                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Ø±Ù‚Ù… Ù‡Ø§ØªÙ Ø§Ù„Ø§ØªØµØ§Ù„
-                      </label>
-                      <input
-                        type="text"
-                        value={doctor.clinic.phone}
-                        onChange={(e) =>
-                          setDoctor({
-                            ...doctor,
-                            clinic: { ...doctor.clinic, phone: e.target.value },
-                          })
-                        }
-                        placeholder="0237612345"
-                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 font-mono dir-ltr text-right"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Ø±Ù‚Ù… ÙˆØ§ØªØ³Ø§Ø¨ Ù„Ø­Ø¬Ø² Ø§Ù„Ù…ÙˆØ§Ø¹ÙŠØ¯ *
-                    </label>
-                    <input
-                      type="text"
-                      value={doctor.clinic.whatsapp}
-                      onChange={(e) =>
-                        setDoctor({
-                          ...doctor,
-                          clinic: { ...doctor.clinic, whatsapp: e.target.value },
-                        })
-                      }
-                      placeholder="+201009876543"
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 font-mono dir-ltr text-right"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Ù…ÙˆØ§Ø¹ÙŠØ¯ Ø§Ù„Ø¹Ù…Ù„ ÙˆØ£ÙŠØ§Ù… Ø§Ù„ÙƒØ´Ù
-                    </label>
-                    <input
-                      type="text"
-                      value={doctor.clinic.workingHours}
-                      onChange={(e) =>
-                        setDoctor({
-                          ...doctor,
-                          clinic: { ...doctor.clinic, workingHours: e.target.value },
-                        })
-                      }
-                      placeholder="Ø§Ù„Ø³Ø¨Øª ÙˆØ§Ù„Ø¥Ø«Ù†ÙŠÙ† ÙˆØ§Ù„Ø£Ø±Ø¨Ø¹Ø§Ø¡: 6:00 Ù… - 10:00 Ù…"
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Ø±Ø§Ø¨Ø· Ø®Ø±Ø§Ø¦Ø· Ø¬ÙˆØ¬Ù„ (Google Maps URL)
-                    </label>
-                    <input
-                      type="text"
-                      value={doctor.clinic.googleMapsUrl}
-                      onChange={(e) =>
-                        setDoctor({
-                          ...doctor,
-                          clinic: { ...doctor.clinic, googleMapsUrl: e.target.value },
-                        })
-                      }
-                      placeholder="https://maps.google.com/?q=..."
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 font-mono dir-ltr text-left"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Ù…Ù„Ø§Ø­Ø¸Ø© Ø¥Ø±Ø´Ø§Ø¯ÙŠØ© Ù„Ù„Ù…Ø±ÙŠØ¶ Ø¹Ù†Ø¯ Ø§Ù„Ø­Ø¬Ø²
-                    </label>
-                    <input
-                      type="text"
-                      value={doctor.clinic.bookingNote || ''}
-                      onChange={(e) =>
-                        setDoctor({
-                          ...doctor,
-                          clinic: { ...doctor.clinic, bookingNote: e.target.value },
-                        })
-                      }
-                      placeholder="ÙŠÙØ±Ø¬Ù‰ Ø¥Ø­Ø¶Ø§Ø± Ø§Ù„ØªØ­Ø§Ù„ÙŠÙ„ ÙˆØ§Ù„ÙØ­ÙˆØµØ§Øª Ø§Ù„Ø³Ø§Ø¨Ù‚Ø© Ø¹Ù†Ø¯ Ø§Ù„Ø²ÙŠØ§Ø±Ø© Ø§Ù„Ø£ÙˆÙ„Ù‰"
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 3: QUALIFICATIONS */}
-            {activeTab === 'qualifications' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <span className="text-xs font-semibold text-slate-800">
-                    Ø§Ù„Ù…Ø¤Ù‡Ù„Ø§Øª Ø§Ù„Ø¹Ù„Ù…ÙŠØ© ÙˆØ§Ù„Ø´Ù‡Ø§Ø¯Ø§Øª
-                  </span>
-                  <button
-                    type="button"
-                    onClick={addQualification}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium transition"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Ø¥Ø¶Ø§ÙØ© Ù…Ø¤Ù‡Ù„</span>
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {doctor.qualifications?.map((q, idx) => (
-                    <div
-                      key={q.id}
-                      className="p-3 rounded-lg border border-slate-200 bg-slate-50/50 space-y-2 text-xs"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-semibold text-slate-500">
-                          Ù…Ø¤Ù‡Ù„ #{idx + 1}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => removeQualification(q.id)}
-                          className="text-slate-400 hover:text-rose-600 p-0.5"
-                          title="Ø­Ø°Ù"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-
-                      <div className="space-y-2">
-                        <input
-                          type="text"
-                          value={q.degree}
-                          onChange={(e) => updateQualification(q.id, { degree: e.target.value })}
-                          placeholder="Ø§Ù„Ø´Ù‡Ø§Ø¯Ø©: Ø¯ÙƒØªÙˆØ±Ø§Ù‡ Ø¬Ø±Ø§Ø­Ø© Ø§Ù„Ù‚Ù„Ø¨ (MD)"
-                          className="w-full text-xs px-2.5 py-1.5 rounded border border-slate-300 bg-white"
-                        />
-                        <input
-                          type="text"
-                          value={q.institution}
-                          onChange={(e) => updateQualification(q.id, { institution: e.target.value })}
-                          placeholder="Ø§Ù„Ø¬Ù‡Ø© Ø§Ù„Ù…Ø§Ù†Ø­Ø©: Ø¬Ø§Ù…Ø¹Ø© Ø§Ù„Ù‚Ø§Ù‡Ø±Ø© (Ù‚ØµØ± Ø§Ù„Ø¹ÙŠÙ†ÙŠ)"
-                          className="w-full text-xs px-2.5 py-1.5 rounded border border-slate-300 bg-white"
-                        />
-                        <div className="flex items-center justify-between">
-                          <input
-                            type="text"
-                            value={q.year || ''}
-                            onChange={(e) => updateQualification(q.id, { year: e.target.value })}
-                            placeholder="Ø³Ù†Ø© Ø§Ù„ØªØ®Ø±Ø¬: 2012"
-                            className="w-28 text-xs px-2 py-1 rounded border border-slate-300 bg-white font-mono"
-                          />
-                          <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={q.verified}
-                              onChange={(e) => updateQualification(q.id, { verified: e.target.checked })}
-                              className="rounded text-teal-600 focus:ring-teal-500 w-3.5 h-3.5"
-                            />
-                            <span className="text-[11px] text-slate-700">Ø´Ø§Ø±Ø© Ù…ÙˆØ«Ù‚ ÙˆÙ…Ø¹ØªÙ…Ø¯</span>
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* TAB 4: SERVICES */}
-            {activeTab === 'services' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <span className="text-xs font-semibold text-slate-800">
-                    Ø§Ù„Ø®Ø¯Ù…Ø§Øª ÙˆØ§Ù„Ø¹Ù…Ù„ÙŠØ§Øª Ø§Ù„Ø·Ø¨ÙŠØ©
-                  </span>
-                  <button
-                    type="button"
-                    onClick={addService}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium transition"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Ø¥Ø¶Ø§ÙØ© Ø®Ø¯Ù…Ø©</span>
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {doctor.services?.map((s, idx) => (
-                    <div
-                      key={s.id}
-                      className="p-3 rounded-lg border border-slate-200 bg-slate-50/50 space-y-2 text-xs"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-semibold text-slate-500">
-                          Ø®Ø¯Ù…Ø© #{idx + 1}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => removeService(s.id)}
-                          className="text-slate-400 hover:text-rose-600 p-0.5"
-                          title="Ø­Ø°Ù"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                        <input
-                          type="text"
-                          value={s.name}
-                          onChange={(e) => updateService(s.id, { name: e.target.value })}
-                          placeholder="Ø§Ø³Ù… Ø§Ù„Ø®Ø¯Ù…Ø© (Ø¨Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©): ÙƒØ´Ù ÙˆÙØ­Øµ Ø³Ø±ÙŠØ±ÙŠ Ø¯Ù‚ÙŠÙ‚"
-                          className="w-full text-xs px-2.5 py-1.5 rounded border border-slate-300 bg-white font-medium"
-                        />
-                        <input
-                          type="text"
-                          value={s.nameEn || ''}
-                          onChange={(e) => updateService(s.id, { nameEn: e.target.value })}
-                          placeholder="Service Name (English): Clinical Consultation"
-                          className="w-full text-xs px-2.5 py-1.5 rounded border border-slate-300 bg-white font-medium dir-ltr text-left"
-                        />
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                        <textarea
-                          rows={2}
-                          value={s.description}
-                          onChange={(e) => updateService(s.id, { description: e.target.value })}
-                          placeholder="ÙˆØµÙ ØªÙØµÙŠÙ„ÙŠ Ù„Ù„Ø®Ø¯Ù…Ø© (Ø¨Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©)..."
-                          className="w-full text-xs p-2 rounded border border-slate-300 bg-white"
-                        />
-                        <textarea
-                          rows={2}
-                          value={s.descriptionEn || ''}
-                          onChange={(e) => updateService(s.id, { descriptionEn: e.target.value })}
-                          placeholder="Detailed description (English)..."
-                          className="w-full text-xs p-2 rounded border border-slate-300 bg-white dir-ltr text-left"
-                        />
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <input
-                          type="text"
-                          value={s.tag || ''}
-                          onChange={(e) => updateService(s.id, { tag: e.target.value })}
-                          placeholder="Ø§Ù„ØªØµÙ†ÙŠÙ: Ø§Ø³ØªØ´Ø§Ø±Ø©"
-                          className="w-full text-xs px-2 py-1 rounded border border-slate-300 bg-white"
-                        />
-                        <input
-                          type="text"
-                          value={s.tagEn || ''}
-                          onChange={(e) => updateService(s.id, { tagEn: e.target.value })}
-                          placeholder="Tag (EN): Consultation"
-                          className="w-full text-xs px-2 py-1 rounded border border-slate-300 bg-white dir-ltr text-left"
-                        />
-                        <input
-                          type="text"
-                          value={s.fee || ''}
-                          onChange={(e) => updateService(s.id, { fee: e.target.value })}
-                          placeholder="Ø§Ù„Ø±Ø³ÙˆÙ…: Ø­Ø³Ø¨ Ø§Ù„ØªÙ‚ÙŠÙŠÙ…"
-                          className="w-full text-xs px-2 py-1 rounded border border-slate-300 bg-white"
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* TAB 5: ARTICLES & FAQS */}
-            {activeTab === 'content' && (
-              <div className="space-y-6">
-                {/* Articles Section */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <span className="text-xs font-semibold text-slate-800">
-                      Ø§Ù„Ù…Ù‚Ø§Ù„Ø§Øª Ø§Ù„ØªØ«Ù‚ÙŠÙÙŠØ© Ø§Ù„Ø·Ø¨ÙŠØ©
-                    </span>
-                    <button
-                      type="button"
-                      onClick={addArticle}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium transition"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Ø¥Ø¶Ø§ÙØ© Ù…Ù‚Ø§Ù„</span>
-                    </button>
-                  </div>
-
-                  <div className="space-y-3">
-                    {doctor.articles?.map((art, idx) => (
-                      <div
-                        key={art.id}
-                        className="p-3 rounded-lg border border-slate-200 bg-slate-50/50 space-y-2 text-xs"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-semibold text-slate-500">
-                            Ù…Ù‚Ø§Ù„ #{idx + 1}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => removeArticle(art.id)}
-                            className="text-slate-400 hover:text-rose-600 p-0.5"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíÛOyÙ:-jZ.¶›­–)Þ³V–×÷'B&V7BÂ²W6U7FFRÂW6TVffV7BÒg&öÒw&V7Bs°¦–×÷'B°¢Fö7F÷%&öf–ÆRÀ¢Fö7F÷%7FGW2À¢VÆ–f–6F–öâÀ¢ÖVF–6Å6W'f–6RÀ¢VGV6F–öæÄ'F–6ÆRÀ¢d—FVÒÀ§Òg&öÒrââòââ÷G—W2öFö7F÷"s°¦–×÷'B²Fö7F÷%vV'6—FRÒg&öÒrââ÷V&Æ–2ôFö7F÷%vV'6—FRs°¦–×÷'B²Fö7F÷%V&Æ–5F‚ÂFö7F÷%V&Æ–5W&ÂÒg&öÒrââòââ÷6W'f–6W2÷W&Ç2s°¦–×÷'B°¢6fRÀ¢vÆö&RÀ¢'&÷u&–v‡BÀ¢W–RÀ¢6Ö'G†öæRÀ¢F&ÆWBÀ¢Ööæ—F÷"À¢ÇW2À¢G&6ƒ"À¢6†V6´6—&6ÆS"À¢WÆöBÀ¢ÆWGFRÀ¢f–ÆUFW‡BÀ¢Ö–âÀ¢6Æö6²À¢7&¶ÆW2À¢6V&6‚À¢W‡FW&æÄÆ–æ²À¢6†V6²À¢7FWF†÷66÷RÀ¢v&BÀ¢&öö´÷VâÀ¢†VÇ6—&6ÆRÀ¢6WGF–æw2À¢ÆW'D6—&6ÆRÀ¢6†&S"À§Òg&öÒvÇV6–FR×&V7Bs°¦–×÷'B²Dô5Dõ%õD„TÔU2ÂvWEF†VÖT'”–BÒg&öÒrââòââöFF÷F†VÖW2s° ¦W‡÷'BG—RVF—F÷%F"Ð¢Âv&6–2p¢Âv6Æ–æ–2p¢ÂwVÆ–f–6F–öç2p¢Âw6W'f–6W2p¢Âv6öçFVçBp¢Âv'&æF–ærp¢Âw6Vòs° §G—Rf–Ww÷'DFWf–6RÒvFW6·F÷rÂwF&ÆWBrÂvÖö&–ÆRs° ¦–çFW&f6RFö7F÷$VF—F÷%&÷2°¢–æ—F–ÄFö7F÷#¢Fö7F÷%&öf–ÆS°¢–æ—F–ÅF#ó¢VF—F÷%F#°¢öå6fS¢†Fö7F÷#¢Fö7F÷%&öf–ÆR’Óâ&öÖ—6SÇfö–Cã°¢öä6æ6VÃ¢‚’Óâfö–C°¢öå&Wf–WuV&Æ–3¢†Fö7F÷#¢Fö7F÷%&öf–ÆR’Óâfö–C°¢ÆÄFö7F÷'3¢Fö7F÷%&öf–ÆUµÓ°§Ð ¦6öç7B$U4UEõ$”Ô%•ô4ôÄõ%2Ò°¢²Æ&VÃ¢}˜=ŠÝ˜M˜¢Š}‹=Š­‹MŠ}‹˜¢„æg’’rÂfÇVS¢r3c$DrÒÀ¢²Æ&VÃ¢}Š=‹-‹˜"˜=˜MŠ}‹=˜­˜=˜¢rÂfÇVS¢r3S4„rÒÀ¢²Æ&VÃ¢}Š=Ší‹m‹ŠÍ‹Š}ŠÝ˜¢„VÖW&ÆB’rÂfÇVS¢r3cDS4"rÒÀ¢²Æ&VÃ¢}‹˜mŠ}Š˜¢˜˜-Š}Šm˜¢„'W&wVæG’’rÂfÇVS¢r3ƒƒ33rrÒÀ¢²Æ&VÃ¢}‹˜]Š}Šý˜¢˜ŠÝ˜]˜¢‹‹]‹˜¢rÂfÇVS¢r3S#“4"rÒÀ¥Ó° ¦6öç7B$U4UEô44TåEô4ôÄõ%2Ò°¢²Æ&VÃ¢}Š­˜­˜B‹}Š˜¢…FVÂ’rÂfÇVS¢r3C“Cƒ‚rÒÀ¢²Æ&VÃ¢}Š=‹-‹˜"‹=˜]Š}˜˜¢…6·’&ÇVR’rÂfÇVS¢r3#ƒD3rrÒÀ¢²Æ&VÃ¢}‹-˜]‹Šý˜¢˜]‹M‹˜"rÂfÇVS¢r3S“cc’rÒÀ¢²Æ&VÃ¢}˜­Š}˜-˜Š­˜¢…&÷6R’rÂfÇVS¢r4SCC‚rÒÀ¢²Æ&VÃ¢}˜=˜}‹˜]Š}˜m˜¢ŠýŠ}˜Šb„Ö&W"’rÂfÇVS¢r4C“ssbrÒÀ¥Ó° ¦W‡÷'B6öç7BFö7F÷$VF—F÷#¢&V7Bäd3ÄFö7F÷$VF—F÷%&÷3âÒ‡°¢–æ—F–ÄFö7F÷"À¢–æ—F–ÅF"Òv&6–2rÀ¢öå6fRÀ¢öä6æ6VÂÀ¢öå&Wf–WuV&Æ–2À¢ÆÄFö7F÷'2À§Ò’Óâ°¢6öç7B¶Fö7F÷"Â6WDFö7F÷%ÒÒW6U7FFSÄFö7F÷%&öf–ÆSâ‚‚’Óà¢¥4ôâç'6R„¥4ôâç7G&–æv–g’†–æ—F–ÄFö7F÷"’¢“°¢6öç7B¶7F—fUF"Â6WD7F—fUF%ÒÒW6U7FFSÄVF—F÷%F#â†–æ—F–ÅF"“°¢6öç7B·&Wf–WtFWf–6RÂ6WE&Wf–WtFWf–6UÒÒW6U7FFSÅf–Ww÷'DFWf–6Sâ‚vFW6·F÷r“°¢6öç7B¶—56f–ærÂ6WD—56f–æuÒÒW6U7FFR†fÇ6R“°¢6öç7B·6fU7V66W74×6rÂ6WE6fU7V66W74×6uÒÒW6U7FFSÇ7G&–ærÂçVÆÃâ†çVÆÂ“°¢6öç7B·6ÇVtW'&÷"Â6WE6ÇVtW'&÷%ÒÒW6U7FFSÇ7G&–ærÂçVÆÃâ†çVÆÂ“°¢6öç7B·6†÷tÆ—fU&Wf–Wu7Æ—BÂ6WE6†÷tÆ—fU&Wf–Wu7Æ—EÒÒW6U7FFR‡G'VR“° ¢òòfÆ–FFR6ÇVrVæ—VVæW72v–ç7B÷F†W"Fö7F÷'0¢W6TVffV7B‚‚’Óâ°¢6öç7B6ÇVrÒ†Fö7F÷"ç6ÇVrÇÂrr’çG&–Ò‚’çFôÆ÷vW$66R‚“°¢–b‚6ÇVr’°¢6WE6ÇVtW'&÷"‚}Š}˜M‹Š}Š‹rŠ}˜M˜]Ší‹]‹R˜]‹}˜M˜Š‚r“°¢&WGW&ã°¢Ð¢6öç7B6ÇVu&VvW‚Òõå¶×£Ó’ÕÒ²Bó°¢–b‚6ÇVu&VvW‚çFW7B‡6ÇVr’’°¢6WE6ÇVtW'&÷"‚}˜­ŠÍŠ‚Š=˜b˜­ŠÝŠ­˜˜¢Š}˜M‹Š}Š‹r‹˜M˜’ŠÝ‹˜˜Š]˜mŠÍ˜M˜­‹-˜­Š’‹]‹­˜­‹ŠˆÂŠ=‹˜-Š}˜]ˆÂ˜‹M‹‹}Š}Š¢‚Ò’˜˜-‹rr“°¢&WGW&ã°¢Ð¢6öç7BGWÆ–6FRÒÆÄFö7F÷'2æf–æB€¢†B’ÓâBæ–BÓÒFö7F÷"æ–BbbBç6ÇVrçFôÆ÷vW$66R‚’ÓÓÒ6ÇVp¢“°¢–b†GWÆ–6FR’°¢6WE6ÇVtW'&÷"†Š}˜M‹Š}Š‹r"G·6ÇVwÒ"˜]‹=Š­ŠíŠý˜RŠŠ}˜M˜‹˜B˜M‹}Š˜­Š‚Š-Ší‹‚G¶GWÆ–6FRægVÆÄæÖWÒ–“°¢&WGW&ã°¢Ð¢6WE6ÇVtW'&÷"†çVÆÂ“°¢ÒÂ¶Fö7F÷"ç6ÇVrÂFö7F÷"æ–BÂÆÄFö7F÷'5Ò“° ¢6öç7B†æFÆU6fRÒ7–æ2‡F&vWE7FGW3ó¢Fö7F÷%7FGW2’Óâ°¢–b‡6ÇVtW'&÷"’°¢ÆW'B†˜­‹ŠÍ˜’Š­‹]ŠÝ˜­ŠÒŠ}˜M‹Š}Š‹rŠ}˜M˜]Ší‹]‹S¢G·6ÇVtW'&÷'Ö“°¢&WGW&ã°¢Ð¢–b‚Fö7F÷"ægVÆÄæÖRçG&–Ò‚’’°¢ÆW'B‚}˜­‹ŠÍ˜’Š]ŠýŠíŠ}˜BŠ}‹=˜RŠ}˜M‹}Š˜­Š‚˜=Š}˜]˜MŠ}˜²âr“°¢&WGW&ã°¢Ð ¢G'’°¢6WD—56f–ær‡G'VR“°¢6öç7BFõ6fRÒ°¢ââæFö7F÷"À¢7FGW3¢F&vWE7FGW2ÇÂFö7F÷"ç7FGW2À¢WFFVDC¢æWrFFR‚’çFô•4õ7G&–ær‚’À¢Ó°¢v—Böå6fR‡Fõ6fR“°¢6WDFö7F÷"‡Fõ6fR“°¢6WE6fU7V66W74×6r‚}Š­˜RŠÝ˜‹‚Š}˜MŠ­‹Šý˜­˜MŠ}Š¢Š˜mŠÍŠ}ŠÒr“°¢6WEF–ÖV÷WB‚‚’Óâ6WE6fU7V66W74×6r†çVÆÂ’Â3“°¢Òf–æÆÇ’°¢6WD—56f–ær†fÇ6R“°¢Ð¢Ó° ¢òòWÆöBFö7F÷"†÷Fòg&öÒFWf–6P¢6öç7B†æFÆU†÷FõWÆöBÒ†S¢&V7Bä6†ævTWfVçCÄ…DÔÄ–çWDVÆVÖVçCâ’Óâ°¢6öç7Bf–ÆRÒRçF&vWBæf–ÆW3òå³Ó°¢–b‚f–ÆR’&WGW&ã° ¢–b‚f–ÆRçG—Rç7F'G5v—F‚‚v–ÖvRòr’’°¢ÆW'B‚}˜­‹ŠÍ˜’Š}ŠíŠ­˜­Š}‹˜]˜M˜‹]˜‹Š’‹]Š}˜MŠÒ„¥rÂärÂvV%’âr“°¢&WGW&ã°¢Ð ¢–b†f–ÆRç6—¦Râ‚¢#B¢#B’°¢ÆW'B‚}ŠÝŠÍ˜RŠ}˜M‹]˜‹Š’˜=Š˜­‹ŠÍŠýŠ}˜½ˆÂ˜­‹ŠÍ˜’Š}ŠíŠ­˜­Š}‹‹]˜‹Š’Š=˜-˜B˜]˜b‚˜]˜­ŠÍŠ}ŠŠ}˜­Š¢âr“°¢&WGW&ã°¢Ð ¢6öç7B&VFW"ÒæWrf–ÆU&VFW"‚“°¢&VFW"æöæÆöBÒ‚’Óâ°¢–b‡G—Vöb&VFW"ç&W7VÇBÓÓÒw7G&–ærr’°¢6WDFö7F÷"‚‡&Wb’Óâ‡²ââç&WbÂ†÷FõW&Ã¢&VFW"ç&W7VÇB27G&–ærÒ’“°¢Ð¢Ó°¢&VFW"ç&VD4FFU$Â†f–ÆR“°¢Ó° ¢òòVÆ–f–6F–öç2†æFÆW'0¢6öç7BFEVÆ–f–6F–öâÒ‚’Óâ°¢6öç7BæWu¢VÆ–f–6F–öâÒ°¢–C¢wÒr²FFRææ÷r‚’À¢FVw&VS¢rrÀ¢–ç7F—GWF–öã¢rrÀ¢–V#¢æWrFFR‚’ævWDgVÆÅ–V"‚’çFõ7G&–ær‚’À¢fW&–f–VC¢G'VRÀ¢Ó°¢6WDFö7F÷"‚‡&Wb’Óâ‡°¢ââç&WbÀ¢VÆ–f–6F–öç3¢²âââ‡&WbçVÆ–f–6F–öç2ÇÂµÒ’ÂæWuÒÀ¢Ò’“°¢Ó° ¢6öç7B&VÖ÷fUVÆ–f–6F–öâÒ†–C¢7G&–ær’Óâ°¢6WDFö7F÷"‚‡&Wb’Óâ‡°¢ââç&WbÀ¢VÆ–f–6F–öç3¢&WbçVÆ–f–6F–öç2æf–ÇFW"‚‡’Óâæ–BÓÒ–B’À¢Ò’“°¢Ó° ¢6öç7BWFFUVÆ–f–6F–öâÒ†–C¢7G&–ærÂF6ƒ¢'F–ÃÅVÆ–f–6F–öãâ’Óâ°¢6WDFö7F÷"‚‡&Wb’Óâ‡°¢ââç&WbÀ¢VÆ–f–6F–öç3¢&WbçVÆ–f–6F–öç2æÖ‚‡’Óâ‡æ–BÓÓÒ–Bò²ââçÂââçF6‚Ò¢’’À¢Ò’“°¢Ó° ¢òò6W'f–6W2†æFÆW'0¢6öç7BFE6W'f–6RÒ‚’Óâ°¢6öç7BæWu6W'f–6S¢ÖVF–6Å6W'f–6RÒ°¢–C¢w2Òr²FFRææ÷r‚’À¢æÖS¢rrÀ¢FW67&—F–öã¢rrÀ¢Fs¢}Š}‹=Š­‹MŠ}‹Š’rÀ¢fVS¢rrÀ¢Ó°¢6WDFö7F÷"‚‡&Wb’Óâ‡°¢ââç&WbÀ¢6W'f–6W3¢²âââ‡&Wbç6W'f–6W2ÇÂµÒ’ÂæWu6W'f–6UÒÀ¢Ò’“°¢Ó° ¢6öç7B&VÖ÷fU6W'f–6RÒ†–C¢7G&–ær’Óâ°¢6WDFö7F÷"‚‡&Wb’Óâ‡°¢ââç&WbÀ¢6W'f–6W3¢&Wbç6W'f–6W2æf–ÇFW"‚‡2’Óâ2æ–BÓÒ–B’À¢Ò’“°¢Ó° ¢6öç7BWFFU6W'f–6RÒ†–C¢7G&–ærÂF6ƒ¢'F–ÃÄÖVF–6Å6W'f–6Sâ’Óâ°¢6WDFö7F÷"‚‡&Wb’Óâ‡°¢ââç&WbÀ¢6W'f–6W3¢&Wbç6W'f–6W2æÖ‚‡2’Óâ‡2æ–BÓÓÒ–Bò²ââç2ÂââçF6‚Ò¢2’’À¢Ò’“°¢Ó° ¢òò'F–6ÆW2†æFÆW'0¢6öç7BFD'F–6ÆRÒ‚’Óâ°¢6öç7BæWt'C¢VGV6F–öæÄ'F–6ÆRÒ°¢–C¢v'BÒr²FFRææ÷r‚’À¢F—FÆS¢rrÀ¢7VÖÖ'“¢rrÀ¢6öçFVçC¢rrÀ¢&VF–æuF–ÖS¢s2Šý˜-Š}Šm˜"˜-‹Š}ŠŠ’rÀ¢FFS¢æWrFFR‚’çFô•4õ7G&–ær‚’ç6Æ–6RƒÂ’À¢Fs¢}˜m‹]Š}ŠmŠÒ‹}Š˜­Š’rÀ¢Ó°¢6WDFö7F÷"‚‡&Wb’Óâ‡°¢ââç&WbÀ¢'F–6ÆW3¢²âââ‡&Wbæ'F–6ÆW2ÇÂµÒ’ÂæWt'EÒÀ¢Ò’“°¢Ó° ¢6öç7B&VÖ÷fT'F–6ÆRÒ†–C¢7G&–ær’Óâ°¢6WDFö7F÷"‚‡&Wb’Óâ‡°¢ââç&WbÀ¢'F–6ÆW3¢&Wbæ'F–6ÆW2æf–ÇFW"‚†’Óâæ–BÓÒ–B’À¢Ò’“°¢Ó° ¢6öç7BWFFT'F–6ÆRÒ†–C¢7G&–ærÂF6ƒ¢'F–ÃÄVGV6F–öæÄ'F–6ÆSâ’Óâ°¢6WDFö7F÷"‚‡&Wb’Óâ‡°¢ââç&WbÀ¢'F–6ÆW3¢&Wbæ'F–6ÆW2æÖ‚†’Óâ†æ–BÓÓÒ–Bò²ââæÂââçF6‚Ò¢’’À¢Ò’“°¢Ó° ¢òòd2†æFÆW'0¢6öç7BFDfÒ‚’Óâ°¢6öç7BæWtf¢d—FVÒÒ°¢–C¢vfÒr²FFRææ÷r‚’À¢VW7F–öã¢rrÀ¢ç7vW#¢rrÀ¢6FVv÷'“¢}‹Š}˜RrÀ¢Ó°¢6WDFö7F÷"‚‡&Wb’Óâ‡°¢ââç&WbÀ¢f3¢²âââ‡&Wbæf2ÇÂµÒ’ÂæWtfÒÀ¢Ò’“°¢Ó° ¢6öç7B&VÖ÷fTfÒ†–C¢7G&–ær’Óâ°¢6WDFö7F÷"‚‡&Wb’Óâ‡°¢ââç&WbÀ¢f3¢&Wbæf2æf–ÇFW"‚†b’Óâbæ–BÓÒ–B’À¢Ò’“°¢Ó° ¢6öç7BWFFTfÒ†–C¢7G&–ærÂF6ƒ¢'F–ÃÄd—FVÓâ’Óâ°¢6WDFö7F÷"‚‡&Wb’Óâ‡°¢ââç&WbÀ¢f3¢&Wbæf2æÖ‚†b’Óâ†bæ–BÓÓÒ–Bò²ââæbÂââçF6‚Ò¢b’’À¢Ò’“°¢Ó° ¢&WGW&â€¢ÆF—bF—#Ò''FÂ"6Æ74æÖSÒ&Ö–âÖ‚×67&VVâ&r×6ÆFRÓSFW‡B×6ÆFRÓ“fÆW‚fÆW‚Ö6öÂföçB×6ç2çF–Æ–6VB#à¢²ò¢ÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒDõ5D”4µ’DôôÄ$"ÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒ¢÷Ð¢Æ†VFW"6Æ74æÖSÒ&‚ÓB&r×v†—FR&÷&FW"Ö"&÷&FW"×6ÆFRÓ#‚ÓB6Ó§‚ÓbfÆW‚—FV×2Ö6VçFW"§W7F–g’Ö&WGvVVâ7F–6·’F÷Ó¢Ó36†F÷rÓ'‡2#à¢²ò¢&–v‡B6–FR…%DÂ“¢&6²bFö7F÷"F—FÆR¢÷Ð¢ÆF—b6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"vÓ2#à¢Æ'WGFöà¢öä6Æ–6³×¶öä6æ6VÇÐ¢6Æ74æÖSÒ'ÓãRFW‡B×6ÆFRÓS†÷fW#§FW‡B×6ÆFRÓ“†÷fW#¦&r×6ÆFRÓ&÷VæFVBÖÆrG&ç6—F–öâ ¢F—FÆSÒ-Š}˜M‹˜ŠýŠ’˜M˜M˜ŠÝŠ’Š}˜MŠ­ŠÝ˜=˜R ¢à¢Ä'&÷u&–v‡B6Æ74æÖSÒ'rÓB‚ÓB"óà¢Âö'WGFöãà ¢ÆF—b6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"vÓ"#à¢Ç7â6Æ74æÖSÒ&föçBÖ&öÆBFW‡B×6ÒFW‡B×6ÆFRÓ“G'Væ6FRÖ‚×rÕ³#…Ò6Ó¦Ö‚×r×‡2#à¢¶Fö7F÷"ægVÆÄæÖRÇÂ}‹}Š˜­Š‚ŠÍŠý˜­ŠòwÐ¢Â÷7ãà¢Ç7â6Æ74æÖSÒ'FW‡B×6ÆFRÓ3#âóÂ÷7ãà¢²ò¢7FGW26VÆV7B¢÷Ð¢Ç6VÆV7@¢fÇVS×¶Fö7F÷"ç7FGW7Ð¢öä6†ævS×²†R’Óà¢6WDFö7F÷"‚‡&Wb’Óâ‡²ââç&WbÂ7FGW3¢RçF&vWBçfÇVR2Fö7F÷%7FGW2Ò’¢Ð¢6Æ74æÖSÒ'FW‡B×‡2&r×6ÆFRÓ†÷fW#¦&r×6ÆFRÓ#óƒföçBÖÖVF—VÒFW‡B×6ÆFRÓs’Ó‚Ó"ãR&÷VæFVBÖÖB&÷&FW"Ó7W'6÷"×ö–çFW"fö7W3§&–ærÓfö7W3§&–ær×FVÂÓS ¢à¢Æ÷F–öâfÇVSÒ&G&gB#í˜]‹=˜ŠýŠ’˜-˜­ŠòŠ}˜MŠ­ŠÍ˜}˜­‹#Âö÷F–öãà¢Æ÷F–öâfÇVSÒ'VæF–ær#í˜-˜­ŠòŠ}˜M˜]‹Š}ŠÍ‹Š’˜Š}˜MŠ}‹Š­˜]Š}ŠóÂö÷F–öãà¢Æ÷F–öâfÇVSÒ'V&Æ—6†VB#í˜]˜m‹M˜‹˜M˜MŠÍ˜]˜}˜‹„Æ—fR“Âö÷F–öãà¢Â÷6VÆV7Cà¢ÂöF—cà¢ÂöF—cà ¢²ò¢6VçFW#¢FWf–6Rf–Ww÷'B7v—F6†W"¢÷Ð¢ÆF—b6Æ74æÖSÒ&†–FFVâÖC¦fÆW‚—FV×2Ö6VçFW"vÓ&r×6ÆFRÓÓ&÷VæFVBÖÆr#à¢Æ'WGFöà¢öä6Æ–6³×²‚’Óâ6WE&Wf–WtFWf–6R‚vFW6·F÷r—Ð¢6Æ74æÖS×¶‚Ó"ãR’Ó&÷VæFVBFW‡B×‡2föçBÖÖVF—VÒG&ç6—F–öâfÆW‚—FV×2Ö6VçFW"vÓãRG°¢&Wf–WtFWf–6RÓÓÒvFW6·F÷p¢òv&r×v†—FRFW‡B×6ÆFRÓ“6†F÷rÓ'‡2föçB×6VÖ–&öÆBp¢¢wFW‡B×6ÆFRÓc†÷fW#§FW‡B×6ÆFRÓ“p¢ÖÐ¢à¢ÄÖöæ—F÷"6Æ74æÖSÒ'rÓ2ãR‚Ó2ãR"óà¢Ç7ãí‹=‹}ŠÒŠ}˜M˜]˜=Š­ŠƒÂ÷7ãà¢Âö'WGFöãà¢Æ'WGFöà¢öä6Æ–6³×²‚’Óâ6WE&Wf–WtFWf–6R‚wF&ÆWBr—Ð¢6Æ74æÖS×¶‚Ó"ãR’Ó&÷VæFVBFW‡B×‡2föçBÖÖVF—VÒG&ç6—F–öâfÆW‚—FV×2Ö6VçFW"vÓãRG°¢&Wf–WtFWf–6RÓÓÒwF&ÆWBp¢òv&r×v†—FRFW‡B×6ÆFRÓ“6†F÷rÓ'‡2föçB×6VÖ–&öÆBp¢¢wFW‡B×6ÆFRÓc†÷fW#§FW‡B×6ÆFRÓ“p¢ÖÐ¢à¢ÅF&ÆWB6Æ74æÖSÒ'rÓ2ãR‚Ó2ãR"óà¢Ç7ãíŠ­Š}Š˜MŠ£Â÷7ãà¢Âö'WGFöãà¢Æ'WGFöà¢öä6Æ–6³×²‚’Óâ6WE&Wf–WtFWf–6R‚vÖö&–ÆRr—Ð¢6Æ74æÖS×¶‚Ó"ãR’Ó&÷VæFVBFW‡B×‡2föçBÖÖVF—VÒG&ç6—F–öâfÆW‚—FV×2Ö6VçFW"vÓãRG°¢&Wf–WtFWf–6RÓÓÒvÖö&–ÆRp¢òv&r×v†—FRFW‡B×6ÆFRÓ“6†F÷rÓ'‡2föçB×6VÖ–&öÆBp¢¢wFW‡B×6ÆFRÓc†÷fW#§FW‡B×6ÆFRÓ“p¢ÖÐ¢à¢Å6Ö'G†öæR6Æ74æÖSÒ'rÓ2ãR‚Ó2ãR"óà¢Ç7ãí˜]˜ŠŠ}˜­˜CÂ÷7ãà¢Âö'WGFöãà¢ÂöF—cà ¢²ò¢ÆVgB6–FS¢6fRb&Wf–Wr'WGFöç2¢÷Ð¢ÆF—b6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"vÓ"#à¢·6fU7V66W74×6rbb€¢Ç7â6Æ74æÖSÒ'FW‡B×‡2FW‡BÖVÖW&ÆBÓsföçBÖÖVF—VÒ†–FFVâ6Ó¦–æÆ–æR#à¢·6fU7V66W74×6wÐ¢Â÷7ãà¢—Ð ¢Æ¢‡&Vc×¶Fö7F÷%V&Æ–5F‚†Fö7F÷"ç6ÇVr—Ð¢F&vWCÒ%ö&Ææ² ¢&VÃÒ&æö÷VæW"æ÷&VfW'&W" ¢6Æ74æÖSÒ&†–FFVâ6Ó¦–æÆ–æRÖfÆW‚—FV×2Ö6VçFW"vÓãR‚Ó2’ÓãR&÷VæFVBÖÆr&÷&FW"&÷&FW"×6ÆFRÓ#FW‡B×6ÆFRÓs†÷fW#¦&r×6ÆFRÓFW‡B×‡2föçBÖÖVF—VÒG&ç6—F–öâ ¢F—FÆSÒ-˜Š­ŠÒ˜]˜˜-‹’Š}˜M‹}Š˜­Š‚˜˜¢‹˜MŠ}˜]Š’Š­Š˜˜­Š‚ŠÍŠý˜­ŠýŠ’ ¢à¢ÄW‡FW&æÄÆ–æ²6Æ74æÖSÒ'rÓ2ãR‚Ó2ãRFW‡B×FVÂÓc"óà¢Ç7ãí‹-˜­Š}‹Š’Š}˜M˜]˜˜-‹“Â÷7ãà¢Âöà ¢Æ'WGFöà¢öä6Æ–6³×²‚’Óâöå&Wf–WuV&Æ–2†Fö7F÷"—Ð¢6Æ74æÖSÒ&†–FFVâ6Ó¦–æÆ–æRÖfÆW‚—FV×2Ö6VçFW"vÓãR‚Ó2’ÓãR&÷VæFVBÖÆr&÷&FW"&÷&FW"×6ÆFRÓ#FW‡B×6ÆFRÓs†÷fW#¦&r×6ÆFRÓFW‡B×‡2föçBÖÖVF—VÒG&ç6—F–öâ ¢à¢ÄW–R6Æ74æÖSÒ'rÓ2ãR‚Ó2ãRFW‡B×6ÆFRÓS"óà¢Ç7ãí˜]‹Š}˜­˜mŠ’˜=‹-Š}Šm‹Â÷7ãà¢Âö'WGFöãà ¢Æ'WGFöà¢öä6Æ–6³×²‚’Óâ†æFÆU6fR‚vG&gBr—Ð¢F—6&ÆVC×¶—56f–æwÐ¢6Æ74æÖSÒ'‚Ó2’ÓãR&÷VæFVBÖÆr&r×6ÆFRÓ†÷fW#¦&r×6ÆFRÓ#FW‡B×6ÆFRÓsFW‡B×‡2föçBÖÖVF—VÒG&ç6—F–öâF—6&ÆVC¦÷6—G’ÓS ¢à¢ŠÝ˜‹‚˜]‹=˜ŠýŠ¢Âö'WGFöãà ¢Æ'WGFöà¢öä6Æ–6³×²‚’Óâ†æFÆU6fR†Fö7F÷"ç7FGW2ÓÓÒwV&Æ—6†VBròwV&Æ—6†VBr¢wV&Æ—6†VBr—Ð¢F—6&ÆVC×¶—56f–æwÐ¢6Æ74æÖSÒ&–æÆ–æRÖfÆW‚—FV×2Ö6VçFW"vÓãR‚Ó2ãR’ÓãR&÷VæFVBÖÆr&r×FVÂÓc†÷fW#¦&r×FVÂÓsFW‡B×v†—FRFW‡B×‡2föçB×6VÖ–&öÆBG&ç6—F–öâF—6&ÆVC¦÷6—G’ÓS6†F÷r×‡2 ¢à¢ÄvÆö&R6Æ74æÖSÒ'rÓ2ãR‚Ó2ãR"óà¢Ç7ãç¶—56f–ærò}ŠÍŠ}‹˜ÒŠ}˜MŠÝ˜‹‚âââr¢}ŠÝ˜‹‚˜˜m‹M‹wÓÂ÷7ãà¢Âö'WGFöãà¢ÂöF—cà¢Âö†VFW#à ¢²ò¢ÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒETÂäRTD•Dõ"tõ$µ54RÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒÒ¢÷Ð¢ÆF—b6Æ74æÖSÒ&fÆW‚ÓfÆW‚÷fW&fÆ÷rÖ†–FFVâ#à¢²ò¢&–v‡BæR„f÷&Ò6öçG&öÇ2’¢÷Ð¢ÆF—b6Æ74æÖSÒ'rÖgVÆÂÆs§rÕ³SC…Ò†Ã§rÕ³c…Ò&÷&FW"ÖÂ&÷&FW"×6ÆFRÓ#&r×v†—FRfÆW‚fÆW‚Ö6öÂ‚Õ¶6Æ2ƒf‚Ó2ãW&VÒ•Ò÷fW&fÆ÷rÖ†–FFVâ6‡&–æ²Ó#à¢²ò¢F'2æf–vF–öâ&"¢÷Ð¢ÆF—b6Æ74æÖSÒ&fÆW‚—FV×2Ö6VçFW"vÓ‚ÓB’Ó"&÷&FW"Ö"&÷&FW"×6ÆFRÓ#&r×6ÆFRÓSós÷fW&fÆ÷r×‚ÖWFòFW‡B×‡26‡&–æ²Ó#à¢Æ'WGFöà¢öä6Æ–6³×²‚’Óâ6WD7F—fUF"‚v&6–2r—Ð¢6Æ74æÖS×¶‚Ó2’ÓãR&÷VæFVBÖÖBv†—FW76RÖæ÷w&G&ç6—F–öâföçBÖÖVF—VÒG°¢7F—fUF"ÓÓÒv&6–2p¢òv&r×v†—FRFW‡B×6ÆFRÓ“6†F÷rÓ'‡2föçB×6VÖ–&öÆBp¢¢wFW‡B×6ÆFRÓc†÷fW#§FW‡B×6ÆFRÓ“p¢ÖÐ¢à¢Š}˜MŠ˜­Š}˜mŠ}Š¢Š}˜MŠ=‹=Š}‹=˜­Š¢Âö'WGFöãà¢Æ'WGFöà¢öä6Æ–6³×²‚’Óâ6WD7F—fUF"‚v6Æ–æ–2r—Ð¢6Æ74æÖS×¶‚Ó2’ÓãR&÷VæFVBÖÖBv†—FW76RÖæ÷w&G&ç6—F–öâföçBÖÖVF—VÒG°¢7F—fUF"ÓÓÒv6Æ–æ–2p¢òv&r×v†—FRFW‡B×6ÆFRÓ“6†F÷rÓ'‡2föçB×6VÖ–&öÆBp¢¢wFW‡B×6ÆFRÓc†÷fW#§FW‡B×6ÆFRÓ“p¢ÖÐ¢à¢Š}˜M‹˜­Š}ŠýŠ’˜Š}˜MŠ­˜Š}‹]˜@¢Âö'WGFöãà¢Æ'WGFöà¢öä6Æ–6³×²‚’Óâ6WD7F—fUF"‚wVÆ–f–6F–öç2r—Ð¢6Æ74æÖS×¶‚Ó2’ÓãR&÷VæFVBÖÖBv†—FW76RÖæ÷w&G&ç6—F–öâföçBÖÖVF—VÒG°¢7F—fUF"ÓÓÒwVÆ–f–6F–öç2p¢òv&r×v†—FRFW‡B×6ÆFRÓ“6†F÷rÓ'‡2föçB×6VÖ–&öÆBp¢¢wFW‡B×6ÆFRÓc†÷fW#§FW‡B×6ÆFRÓ“p¢ÖÐ¢à¢Š}˜M˜]ŠM˜}˜MŠ}Š¢‡¶Fö7F÷"çVÆ–f–6F–öç3òæÆVæwF‚ÇÂÒ¢Âö'WGFöãà¢Æ'WGFöà¢öä6Æ–6³×²‚’Óâ6WD7F—fUF"‚w6W'f–6W2r—Ð¢6Æ74æÖS×¶‚Ó2’ÓãR&÷VæFVBÖÖBv†—FW76RÝt÷­¢G§²ÚîÆ­yÐ</div>
                         <input
                           type="text"
                           value={art.title}
@@ -1338,7 +252,7 @@ export const DoctorEditor: React.FC<DoctorEditorProps> = ({
                   </span>
                   <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 space-y-1">
                     <p className="text-[11px] font-mono text-emerald-800 dir-ltr text-right truncate">
-                      {window.location.origin}/doctors/{doctor.slug}
+                      {doctorPublicUrl(doctor.slug)}
                     </p>
                     <h4 className="text-xs font-semibold text-blue-800 truncate">
                       {doctor.seo?.metaTitle || doctor.fullName + ' | ' + doctor.specialty}
